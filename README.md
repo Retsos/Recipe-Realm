@@ -1,16 +1,28 @@
-# reciperealm
+# 🥗 Recipe Realm
 
-A new Flutter project.
+**Recipe Realm** is a mobile app built with Flutter that allows users to browse, create, and manage their own recipes while also planning their meals throughout the week.
 
-## Getting Started
+## 📱 Features
+- Create and view recipes with ingredients and instructions
+- Filter by category, preparation time, and difficulty
+- Guest mode access (no login required)
+- Weekly meal planner with day-by-day organization
+- Smart notifications for each meal (breakfast, lunch, dinner)
+- Favorite recipes and quick access
+- Works offline using a local SQLite database
 
-This project is a starting point for a Flutter application.
+## 🛠️ Technologies Used
+- **Flutter** (cross-platform UI)
+- **Firebase Authentication** (user login & registration)
+- **Cloud Firestore** (cloud data storage)
+- **Floor** (local SQLite database via repository pattern)
+- **Supabase** (image storage)
+- **SharedPreferences** (local settings)
+- **Provider** (state management)
+- **Firebase Messaging** (push notifications)
 
-A few resources to get you started if this is your first Flutter project:
+## 🎯 Purpose
+### 📚 Related Course
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+This project was developed as part of the **Advanced Topics of Human Computer Interaction (Mobile Programming)** course, Department of Information and Electronic Engineering, 
+aiming to demonstrate the use of modern cross-platform development tools and cloud integration in building a fully functional and user-friendly recipe and meal planning system.
