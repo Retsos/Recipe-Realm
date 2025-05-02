@@ -3,15 +3,20 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import 'app_repo.dart';
+
 class FirebaseService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final AppRepository _repository;
 
   // Get current user ID
   String? get currentUserId => _auth.currentUser?.uid;
+  FirebaseService(this._repository);
 
   // Check if user is authenticated
   bool get isUserAuthenticated => _auth.currentUser != null;
+
 
   // Get all recipes with access control
   Future<List<Map<String, dynamic>>> getAllRecipes() async {
@@ -21,7 +26,6 @@ class FirebaseService {
       // Convert to a list of maps that contain both recipe data and metadata
       final allRecipes = snap.docs.map((doc) {
         final data = doc.data();
-
         return {
           'documentId': doc.id,
           'name': data['name'] ?? '',
@@ -73,6 +77,29 @@ class FirebaseService {
       debugPrint('Error loading recipes from Firestore: $e');
       return [];
     }
+  }
+  Future<List<Map<String, dynamic>>> getLocalDefaultRecipes() async {
+    final localRecipes = await _repository.getRecipes(); // RecipeEntity list
+    return localRecipes.map((r) => {
+      'documentId': r.documentId,
+      'name': r.name,
+      'assetPath': r.assetPath,
+      'prepTime': r.prepTime,
+      'servings': r.servings,
+      'Introduction': r.Introduction,
+      'category': r.category,
+      'difficulty': r.difficulty,
+      'ingredientsAmount': r.ingredientsAmount,
+      'ingredients': r.ingredients,
+      'instructions': r.instructions,
+      'imageUrl': null,
+      'metadata': {
+        'createdBy': '',
+        'access': 'public',
+        'isOwnRecipe': false,
+        'isDefaultRecipe': true,
+      }
+    }).toList();
   }
 
   // Get a single recipe by ID

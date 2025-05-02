@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -59,85 +62,90 @@ class _RecipeCardState extends State<RecipeCard> {
   }
   static DateTime? _lastSnackbarTime;
 
+  Future<bool> _hasRealInternet({Duration timeout = const Duration(seconds: 5)}) async {
+    try {
+      final result = await InternetAddress.lookup('example.com').timeout(timeout);
+      return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+    } on SocketException catch (_) {
+      return false;
+    } on TimeoutException catch (_) {
+      return false;
+    }
+  }
+
   Future<void> _handleFavoriteToggle() async {
     final repo = Provider.of<AppRepository>(context, listen: false);
-    final User? user = FirebaseAuth.instance.currentUser;
+    final user = FirebaseAuth.instance.currentUser;
 
-    // First check if user is logged in
-
+    // 1) Αν δεν είναι συνδεδεμένος ο χρήστης → SnackBar
     if (user == null) {
-      // User is not logged in, show a SnackBar
-
       final now = DateTime.now();
-
-      // Αν έχει περάσει λιγότερο από 2.5 δευτερόλ  επτα, δεν δειχνω νέο Snackbar
-      if (_lastSnackbarTime != null &&
-          now.difference(_lastSnackbarTime!).inMilliseconds < 2500) {
-        return;
+      if (_lastSnackbarTime == null ||
+          now.difference(_lastSnackbarTime!).inMilliseconds >= 2500) {
+        _lastSnackbarTime = now;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please log in to save favorites'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       }
-
-      _lastSnackbarTime = now;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please log in to save favorites'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      return; // Exit the method early
+      return;
     }
-    print(user);
+
     setState(() => _isProcessingFavorite = true);
 
     try {
-      // Continue with existing favorite toggle logic
-      // 1. Read current state
+      // 2) Πάρε το τρέχον state και φτιάξε το αντίθετο
       final isFav = await _isFavoriteFuture;
       final newState = !isFav;
 
-      // 2. Write locally (marked synced=false if adding)
-      await repo.toggleFavorite(context,widget.documentId, newState);
+      // 3) Toggle τοπικά (και σήμα synced=false αν προσθέτεις)
+      await repo.toggleFavorite(context, widget.documentId, newState);
 
-      // 3. If online, push immediately; else show offline SnackBar
-      if (await repo.isConnected()) {
+      // 4) Έλεγχος πραγματικού Internet
+      final online = await _hasRealInternet();
+      if (online) {
+        // Αν έχει σύνδεση, κάνε sync
         await repo.syncFavorites();
-      } else {
+      }
+
+      // 5) Ειδοποίηση επιτυχίας
+      final now2 = DateTime.now();
+      if (_lastSnackbarTime == null ||
+          now2.difference(_lastSnackbarTime!).inMilliseconds >= 2500) {
+        _lastSnackbarTime = now2;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No internet — favorite will sync when back online'),
+          SnackBar(
+            content: Text(
+              newState ? 'Added to favorites' : 'Removed from favorites',
+            ),
             behavior: SnackBarBehavior.floating,
           ),
         );
       }
 
-      // 4. Provide UI feedback
+      // 6) Ενημέρωση UI
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(newState
-                ? 'Added to favorites'
-                : 'Removed from favorites'),
-          ),
-        );
-        // refresh local‐read future
         setState(() {
           _loadFavoriteStatus();
           _isProcessingFavorite = false;
         });
       }
     } catch (e) {
+      // Σφάλμα γενικά
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Operation failed. Please try again.'),
             backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
           ),
         );
         setState(() => _isProcessingFavorite = false);
       }
     }
   }
-
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);

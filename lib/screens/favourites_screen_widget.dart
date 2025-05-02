@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -6,6 +9,7 @@ import 'package:reciperealm/widgets/recipe_card.dart';
 import 'package:reciperealm/database/app_repo.dart';
 
 import '../database/FirebaseDebugUtil.dart';
+import '../database/entities.dart';
 import 'allrecipes_screen_widget.dart';
 
 class FavoritesScreen extends StatefulWidget {
@@ -18,12 +22,41 @@ class FavoritesScreen extends StatefulWidget {
 class _FavoritesScreenState extends State<FavoritesScreen> {
   late Future<List<String>> _favoriteIdsFuture;
   bool _isLoading = false;
+  late StreamSubscription _connSub;
+  bool _isConnected = true;
+  bool _hasShownOfflineSnackbar = false;
 
   @override
   void initState() {
     super.initState();
-    // Kick off the first load
+    // 1) αρχικός έλεγχος
+    _checkConnection();
+    // 2) ακρόαση αλλαγών
+    _connSub = Connectivity()
+        .onConnectivityChanged
+        .listen((status) {
+      final nowOnline = status != ConnectivityResult.none;
+      if (nowOnline != _isConnected) {
+        setState(() => _isConnected = nowOnline);
+        if (!nowOnline && !_hasShownOfflineSnackbar) {
+          _hasShownOfflineSnackbar = true;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Offline: showing only saved favorites'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      }
+      // κατά περίπτωση ξαναφορτώνουμε
+      _loadFavorites();
+    });
     _loadFavorites();
+  }
+
+  Future<void> _checkConnection() async {
+    final status = await Connectivity().checkConnectivity();
+    setState(() => _isConnected = status != ConnectivityResult.none);
   }
 
   @override
@@ -41,41 +74,27 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     });
   }
 
+  @override
+  void dispose() {
+    _connSub.cancel();
+    super.dispose();
+  }
+
   Future<List<String>> _getFavoriteRecipeIds() async {
-    try {
-      final repo = Provider.of<AppRepository>(context, listen: false);
+    final repo = Provider.of<AppRepository>(context, listen: false);
+    // πάντα από local DB
+    final localFavs = await repo.getFavorites();
+    final ids = localFavs.map((f) => f.documentId).toList();
 
-      // Always use the repository's getFavorites method first
-      final favorites = await repo.getFavorites();
-      final ids = favorites.map((fav) => fav.documentId).toList();
-
-      debugPrint('[FavoritesScreen] Found ${ids.length} favorites: $ids');
-
-      // If we have no favorites and user is signed in, try a direct Firestore fetch as backup
-      if (ids.isEmpty && FirebaseAuth.instance.currentUser != null) {
-        debugPrint('[FavoritesScreen] No favorites found in repository, trying direct Firestore lookup');
-        final directIds = await _getDirectFirestoreFavorites();
-
-        // If we found favorites directly, trigger a sync to update the repository
-        if (directIds.isNotEmpty) {
-          debugPrint('[FavoritesScreen] Found ${directIds.length} favorites directly from Firestore');
-          // Use public method instead of private method
-          await repo.syncFavorites();
-          return directIds;
-        }
+    // όταν είμαστε online, μπορούμε προαιρετικά να πάρουμε και από Firestore
+    if (_isConnected && ids.isEmpty && FirebaseAuth.instance.currentUser != null) {
+      final remote = await _getDirectFirestoreFavorites();
+      if (remote.isNotEmpty) {
+        await repo.syncFavorites();
+        return remote;
       }
-
-      setState(() {
-        _isLoading = false;
-      });
-      return ids;
-    } catch (e) {
-      debugPrint('[FavoritesScreen] Error fetching favorites: $e');
-      setState(() {
-        _isLoading = false;
-      });
-      return [];
     }
+    return ids;
   }
 
   Future<List<String>> _getDirectFirestoreFavorites() async {
@@ -177,6 +196,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
+    final repo = Provider.of<AppRepository>(context, listen: false);
 
     return Scaffold(
       appBar: AppBar(
@@ -184,40 +204,101 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         backgroundColor: Colors.green,
       ),
       body: user == null
+      // Αν δεν έχει user, φαίνεται empty view
           ? _buildEmptyFavoritesView()
-          : StreamBuilder<DocumentSnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('User')
-            .doc(user.uid)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+      // Αν έχει user, βλέπουμε αν είμαστε online
+          : FutureBuilder<bool>(
+        future: Connectivity().checkConnectivity()
+            .then((status) => status != ConnectivityResult.none),
+        builder: (ctx, connSnap) {
+          if (connSnap.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
+          final isOnline = connSnap.data == true;
 
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
+          if (!isOnline) {
+            // --- OFFLINE: φορτώνουμε μόνο από local DB ---
+            return FutureBuilder<List<FavoriteRecipeEntity>>(
+              future: repo.getFavorites(),
+              builder: (_, favSnap) {
+                if (favSnap.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final favs = favSnap.data ?? [];
+                if (favs.isEmpty) return _buildEmptyFavoritesView();
+
+                // Φιλτράρουμε όλες τις συνταγές τοπικά
+                return FutureBuilder<List<RecipeEntity>>(
+                  future: repo.getRecipes()
+                      .then((all) => all
+                      .where((r) => favs.any((f) => f.documentId == r.documentId))
+                      .toList()),
+                  builder: (_, recSnap) {
+                    if (recSnap.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    final recipes = recSnap.data ?? [];
+                    if (recipes.isEmpty) return _buildEmptyFavoritesView();
+
+                    return GridView.builder(
+                      padding: const EdgeInsets.all(16),
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        crossAxisSpacing: 10,
+                        mainAxisSpacing: 10,
+                        childAspectRatio: 0.7,
+                      ),
+                      itemCount: recipes.length,
+                      itemBuilder: (ctx2, i) {
+                        final r = recipes[i];
+                        return RecipeCard(
+                          documentId: r.documentId,
+                          name: r.name,
+                          imageUrl: r.assetPath,
+                          prepTime: r.prepTime,
+                          servings: r.servings,
+                          Introduction: r.Introduction,
+                          category: r.category,
+                          difficulty: r.difficulty,
+                          ingredientsAmount: r.ingredientsAmount,
+                          ingredients: r.ingredients,
+                          instructions: r.instructions,
+                        );
+                      },
+                    );
+                  },
+                );
+              },
+            );
+          } else {
+            // --- ONLINE: χρησιμοποιούμε Firestore stream όπως πριν ---
+            return StreamBuilder<DocumentSnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('User')
+                  .doc(user.uid)
+                  .snapshots(),
+              builder: (context, snap) {
+                if (snap.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snap.hasError) {
+                  return Center(child: Text('Error: ${snap.error}'));
+                }
+                final data = snap.data?.data() as Map<String, dynamic>? ?? {};
+                final favorites = List<String>.from(data['favorites'] ?? []);
+                if (favorites.isEmpty) return _buildEmptyFavoritesView();
+
+                // χωρίζουμε σε chunks των 10 docIds
+                final chunks = <List<String>>[];
+                for (var i = 0; i < favorites.length; i += 10) {
+                  final end = i + 10 < favorites.length ? i + 10 : favorites.length;
+                  chunks.add(favorites.sublist(i, end));
+                }
+
+                return FavoritesGridView(chunks: chunks);
+              },
+            );
           }
-
-          if (!snapshot.hasData || !snapshot.data!.exists) {
-            return _buildEmptyFavoritesView();
-          }
-
-          final data = snapshot.data!.data() as Map<String, dynamic>?
-              ?? {};
-          final favorites = List<String>.from(data['favorites'] ?? []);
-
-          if (favorites.isEmpty) {
-            return _buildEmptyFavoritesView();
-          }
-
-          final chunks = <List<String>>[];
-          for (var i = 0; i < favorites.length; i += 10) {
-            final end = (i + 10 < favorites.length) ? i + 10 : favorites.length;
-            chunks.add(favorites.sublist(i, end));
-          }
-
-          return FavoritesGridView(chunks: chunks);
         },
       ),
     );

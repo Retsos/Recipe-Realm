@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -77,6 +78,17 @@ class AppRepository extends ChangeNotifier {
     }
   }
 
+  Future<bool> _hasRealInternet({Duration timeout = const Duration(seconds: 5)}) async {
+    try {
+      final result = await InternetAddress.lookup('example.com').timeout(timeout);
+      return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+    } on SocketException catch (_) {
+      return false;
+    } on TimeoutException catch (_) {
+      return false;
+    }
+  }
+
   Future<bool> isUserLoggedIn() async {
     final user = FirebaseAuth.instance.currentUser;
     return user != null;
@@ -110,61 +122,59 @@ class AppRepository extends ChangeNotifier {
   }
   static DateTime? _lastSnackbarTime;
 
-  Future<void> toggleFavorite(BuildContext context,String recipeId, bool isFavorite) async {
+  Future<void> toggleFavorite(BuildContext context, String recipeId, bool isFavorite) async {
     final dao = localDb.favoriteRecipeDao;
 
-    ///ΑΠΟΦΥΓΗ ΣΠΑΜ
+    // 1) Απόφυγη σπαμ SnackBar
     final now = DateTime.now();
-
-    // Αν έχει περάσει λιγότερο από 2.5 δευτερόλ  επτα, δεν δειχνω νέο Snackbar
-    if (_lastSnackbarTime != null &&
-        now.difference(_lastSnackbarTime!).inMilliseconds < 2500) {
-      return;
+    if (_lastSnackbarTime != null
+        && now.difference(_lastSnackbarTime!).inMilliseconds < 2500) {
+      // skip
     }
     _lastSnackbarTime = now;
 
+    // 2) Guest check
     if (!(await isUserLoggedIn())) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('You must login inorder to save your favorite recipes!'),
-        ),
+        const SnackBar(content: Text('You must login to save favorites!')),
       );
-      return; // Έξοδος νωρίς
+      return;
     }
 
+    // 3) Τοπικό write πάντως, synced=false
     if (isFavorite) {
-      debugPrint('[Favorites] Adding $recipeId locally');
       await dao.insertFavorite(FavoriteRecipeEntity(recipeId, synced: false));
     } else {
-      debugPrint('[Favorites] Removing $recipeId locally');
       final fav = await dao.findFavorite(recipeId);
       if (fav != null) await dao.deleteFavorite(fav);
     }
-
-    // grab the _whole_ local list
-    final allFavs = await dao.findAllFavorites();
-    final ids = allFavs.map((f) => f.documentId).toList();
-    debugPrint('[Favorites] Will push these IDs to Firestore: $ids');
-
-    // ALWAYS push the current list up to Firestore
-    final uid = _userId ?? FirebaseAuth.instance.currentUser?.uid;
-    if (uid != null && await _isConnected) {
-      await firestore
-          .collection('User')
-          .doc(uid)
-          .set({ 'favorites': ids }, SetOptions(merge: true));
-      debugPrint('[Favorites] Pushed updated favorites to Firestore');
-    } else {
-      debugPrint('[Favorites] Skipped push (no user or offline)');
-    }
-
-    // mark everything locally as “synced”
-    for (var f in allFavs) {
-      await dao.markSynced(f.documentId);
-    }
-
-    // fire off our usual listener
     notifyFavoritesChanged();
+
+    // 4) Προσπάθησε να σπρώξεις στο cloud
+    if (await _hasRealInternet()) {
+      final all = await dao.findAllFavorites();
+      final ids = all.map((f) => f.documentId).toList();
+      final uid = _userId ?? FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null) {
+        await firestore
+            .collection('User')
+            .doc(uid)
+            .set({'favorites': ids}, SetOptions(merge: true));
+
+        // 5) Σημείωσε όλα synced=true
+        for (var f in all) {
+          await dao.markSynced(f.documentId);
+        }
+        notifyFavoritesChanged();
+      }
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Offline: Favorites will sync when back online!'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
   }
 
 

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -30,18 +32,24 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late Future<List<RecipeWithFavorite>> _recipesFuture;
   User? get _currentUser => FirebaseAuth.instance.currentUser;
+  late StreamSubscription<void> _favSub;
 
   @override
   void initState(){
     super.initState();
     updateFcmToken();
-  }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
+    // Παίρνουμε το repo και φτιάχνουμε το αρχικό future
     final repo = Provider.of<AppRepository>(context, listen: false);
     _recipesFuture = _getRecipesWithFavorites(repo);
+
+    // Κάνουμε subscribe στο favoritesChanged
+    _favSub = repo.favoritesChanged.listen((_) {
+      // Όποτε αλλάζουν τα favorites ξανατρέχουμε το future
+      setState(() {
+        _recipesFuture = _getRecipesWithFavorites(repo);
+      });
+    });
   }
 
   Future<List<RecipeWithFavorite>> _getRecipesWithFavorites(AppRepository repo) async {
@@ -132,21 +140,16 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-
   @override
   Widget build(BuildContext context) {
     final isDark = widget.isDarkMode;
     final theme = Theme.of(context);
 
-
-
     return Scaffold(
       appBar: AppBar(
         title: Text(
           'Recipe Realm',
-          style: TextStyle(
-            color: theme.colorScheme.onSurface,
-          ),
+          style: TextStyle(color: theme.colorScheme.onSurface),
         ),
         backgroundColor: theme.colorScheme.surface,
         actions: [_buildUserAvatar()],
@@ -164,7 +167,7 @@ class _HomeScreenState extends State<HomeScreen> {
             const Text('Recipes', style: TextStyle(fontSize: 24)),
             const SizedBox(height: 20),
 
-            // ← THIS is now wired up to your Future
+            // Εδώ χρησιμοποιούμε το ανανεώσιμο Future
             FutureBuilder<List<RecipeWithFavorite>>(
               future: _recipesFuture,
               builder: (ctx, snap) {
@@ -172,12 +175,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   return const Center(child: CircularProgressIndicator());
                 }
                 if (snap.hasError) {
-                  print('Error in FutureBuilder: ${snap.error}');
                   return Center(child: Text('Error: ${snap.error}'));
                 }
                 final list = snap.data ?? [];
                 if (list.isEmpty) {
-                  print('No recipes found.');
                   return const Center(child: Text('No recipes found.'));
                 }
 
@@ -192,30 +193,30 @@ class _HomeScreenState extends State<HomeScreen> {
                       }
                       final rf = list[i];
                       return RecipeCard(
-                        documentId: rf.recipe.documentId,
-                        name:        rf.recipe.name,
-                        imageUrl:    rf.recipe.assetPath,
-                        prepTime:    rf.recipe.prepTime,
-                        servings:    rf.recipe.servings,
-                        Introduction:rf.recipe.Introduction,
-                        category:    rf.recipe.category,
-                        difficulty:  rf.recipe.difficulty,
+                        documentId:      rf.recipe.documentId,
+                        name:            rf.recipe.name,
+                        imageUrl:        rf.recipe.assetPath,
+                        prepTime:        rf.recipe.prepTime,
+                        servings:        rf.recipe.servings,
+                        Introduction:    rf.recipe.Introduction,
+                        category:        rf.recipe.category,
+                        difficulty:      rf.recipe.difficulty,
                         ingredientsAmount: rf.recipe.ingredientsAmount,
-                        ingredients: rf.recipe.ingredients,
-                        instructions: rf.recipe.instructions,
+                        ingredients:     rf.recipe.ingredients,
+                        instructions:    rf.recipe.instructions,
                       );
                     },
                   ),
                 );
               },
             ),
-
             _buildCreateMealPlan(),
           ],
         ),
       ),
     );
   }
+
 
   Widget _buildUserAvatar() {
     return StreamBuilder<User?>(

@@ -1,10 +1,15 @@
-  import 'package:flutter/material.dart';
+  import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter/material.dart';
   import 'package:connectivity_plus/connectivity_plus.dart';
   import 'package:provider/provider.dart';
   import 'package:firebase_auth/firebase_auth.dart';
   import 'package:reciperealm/widgets/recipe_card.dart';
   import '../database/FirebaseService.dart';
   import 'package:reciperealm/widgets/guest_provider_widget.dart';
+
+import '../database/app_repo.dart';
 
   class AllRecipesScreen extends StatefulWidget {
     final String? initialCategory;
@@ -23,7 +28,40 @@
     bool _isConnected = true;
     bool _showOnlyMyRecipes = false; // Added for filtering by creator
     String? _currentUserId;
-    final FirebaseService _firebaseService = FirebaseService();
+    late final FirebaseService _firebaseService;
+    bool _didInit = false;
+
+    Future<bool> hasRealInternet({Duration timeout = const Duration(seconds: 5)}) async {
+      try {
+        final result = await InternetAddress.lookup('example.com').timeout(timeout);
+        return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+      } on SocketException catch (_) {
+        return false;
+      } on TimeoutException catch (_) {
+        return false;
+      }
+    }
+
+    @override
+    void didChangeDependencies() {
+      super.didChangeDependencies();
+      if (!_didInit) {
+        _didInit = true;
+        final repo = Provider.of<AppRepository>(context, listen: false);
+        _firebaseService = FirebaseService(repo);
+
+        // μόλις έχεις service, τσέκαρε σύνδεση & φόρτωσε recipes
+        _checkConnectionAndLoadRecipes();
+        Connectivity().onConnectivityChanged.listen((result) {
+          final connected = result != ConnectivityResult.none;
+          if (connected != _isConnected) {
+            setState(() => _isConnected = connected);
+            _checkConnectionAndLoadRecipes(showSnackbar: true);
+          }
+        });
+      }
+    }
+
 
     final List<String> _prepTimeOptions = [
       'All', '0-15min', '15-30min', '30-60min', '60+min'
@@ -32,39 +70,50 @@
     @override
     void initState() {
       super.initState();
-      _getCurrentUserId();
       _selectedCategory = widget.initialCategory;
-
-      Connectivity().onConnectivityChanged.listen((result) {
-        setState(() => _isConnected = result != ConnectivityResult.none);
-        _loadFirestoreRecipes();
-      });
-      Connectivity().checkConnectivity().then((result) {
-        _isConnected = result != ConnectivityResult.none;
-        _loadFirestoreRecipes();
-      });
     }
 
-    // Get current user ID from Firebase Auth
-    Future<void> _getCurrentUserId() async {
-      final currentUser = FirebaseAuth.instance.currentUser;
-      _currentUserId = currentUser?.uid;
-      debugPrint('Current user ID: $_currentUserId');
+    bool _hasShownOfflineSnackbar = false;
+
+    Future<void> _checkConnectionAndLoadRecipes({bool showSnackbar = false}) async {
+      final connectivityResult = await Connectivity().checkConnectivity();
+      final hasNet = connectivityResult != ConnectivityResult.none;
+      final realNet = hasNet && await hasRealInternet();
+      if (!realNet && showSnackbar && !_hasShownOfflineSnackbar) {
+        _hasShownOfflineSnackbar = true;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Offline: showing only default recipes'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      setState(() => _isConnected = realNet);
+      await _loadRecipes(realNet);
     }
 
-    Future<void> _loadFirestoreRecipes() async {
+
+    Future<void> _loadRecipes(bool fromFirestore) async {
       setState(() => _isLoading = true);
       try {
-        // Use the firebase service to get all recipes
-        _recipes = await _firebaseService.getAllRecipes();
-        debugPrint('Loaded ${_recipes?.length ?? 0} recipes from Firestore');
+        if (fromFirestore) {
+          try {
+            _recipes = await _firebaseService.getAllRecipes();
+          } catch (e) {
+            debugPrint('Firestore load failed ($e), falling back to local defaults');
+            _recipes = await _firebaseService.getLocalDefaultRecipes();
+          }
+        } else {
+          _recipes = await _firebaseService.getLocalDefaultRecipes();
+        }
       } catch (e) {
-        debugPrint('Error loading Firestore recipes: $e');
+        debugPrint('Unexpected error loading recipes: $e');
         _recipes = [];
       } finally {
         if (mounted) setState(() => _isLoading = false);
       }
     }
+
     List<Map<String, dynamic>> _getFilteredRecipes() {
       if (_recipes == null) return [];
 
