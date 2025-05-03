@@ -147,11 +147,42 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          'Recipe Realm',
-          style: TextStyle(color: theme.colorScheme.onSurface),
-        ),
         backgroundColor: theme.colorScheme.surface,
+        elevation: 2,
+        title: Row(
+          children: [
+            ShaderMask(
+              shaderCallback: (Rect bounds) {
+                return const LinearGradient(
+                  colors: [Colors.orange, Colors.redAccent],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ).createShader(bounds);
+              },
+              child: const Icon(
+                Icons.restaurant,
+                size: 28,
+                color: Colors.white, // Required for ShaderMask
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              'Recipe Realm',
+              style: TextStyle(
+                color: theme.colorScheme.onSurface,
+                fontWeight: FontWeight.bold,
+                fontSize: 20,
+                shadows: const [
+                  Shadow(
+                    offset: Offset(1, 2),
+                    blurRadius: 3.0,
+                    color: Colors.black38,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
         actions: [_buildUserAvatar()],
       ),
       body: SingleChildScrollView(
