@@ -104,7 +104,6 @@ class _LoginRegisterPageState extends State<LoginRegisterPage> {
         ),
         backgroundColor: theme.colorScheme.surface,
         actions: [
-          // Add theme toggle button
           IconButton(
             icon: Icon(
               isDark ? Icons.wb_sunny : Icons.nightlight_round,
@@ -115,70 +114,114 @@ class _LoginRegisterPageState extends State<LoginRegisterPage> {
         ],
         centerTitle: true,
       ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: isDark
-                ? [theme.colorScheme.surface.lighten(), theme.colorScheme.surface]
-                : [Colors.green.shade100, Colors.green.shade50],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Form(
-            key: _formKey,
-            child: ListView(
-              children: [
-                if (!_isLoginMode)
-                  _buildInputField(_nameController, 'Full Name', Icons.person_outline),
-                _buildInputField(_emailController, 'Email Address', Icons.email_outlined),
-                _buildInputField(_passwordController, 'Password', Icons.lock_outline, isPassword: true),
-                if (!_isLoginMode)
-                  _buildInputField(_confirmPasswordController, 'Confirm Password', Icons.lock_reset, isPassword: true),
-                const SizedBox(height: 30),
-                ElevatedButton(
-                  onPressed: _submit,
-                  style: ElevatedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    backgroundColor: Colors.green[500],
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: Text(_isLoginMode ? 'Sign In' : 'Sign Up'),
-                ),
-                const SizedBox(height: 25),
-                TextButton(
-                  onPressed: _toggleMode,
-                  child: RichText(
-                    text: TextSpan(
-                      style: TextStyle(
-                        color: theme.colorScheme.onSurface.withAlpha(220),
-                      ),
-                      children: [
-                        TextSpan(
-                          text: _isLoginMode ? "New to Recipe Realm? " : "Already have an account? ",
-                        ),
-                        TextSpan(
-                          text: _isLoginMode ? "Sign Up" : "Sign In",
-                          style: TextStyle(
-                            color: Colors.green[500],
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final isLandscape = constraints.maxWidth > constraints.maxHeight;
+
+          return Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: isDark
+                    ? [theme.colorScheme.surface.lighten(), theme.colorScheme.surface]
+                    : [Colors.green.shade100, Colors.green.shade50],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Form(
+                key: _formKey,
+                child: isLandscape
+                    ? SingleChildScrollView(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight,
                     ),
+                    child: IntrinsicHeight(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Expanded(
+                            child: Center(
+                              child: Icon(
+                                Icons.lock,
+                                size: 100,
+                                color: Colors.green[400],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 40),
+                          Expanded(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [_buildFormFields()],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                )
+                    : ListView(
+                  children: [_buildFormFields()],
+                ),
+
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+  Widget _buildFormFields() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (!_isLoginMode)
+          _buildInputField(_nameController, 'Full Name', Icons.person_outline),
+        _buildInputField(_emailController, 'Email Address', Icons.email_outlined),
+        _buildInputField(_passwordController, 'Password', Icons.lock_outline, isPassword: true),
+        if (!_isLoginMode)
+          _buildInputField(_confirmPasswordController, 'Confirm Password', Icons.lock_reset, isPassword: true),
+        const SizedBox(height: 30),
+        ElevatedButton(
+          onPressed: _submit,
+          style: ElevatedButton.styleFrom(
+            foregroundColor: Colors.white,
+            backgroundColor: Colors.green[500],
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          child: Text(_isLoginMode ? 'Sign In' : 'Sign Up'),
+        ),
+        const SizedBox(height: 25),
+        TextButton(
+          onPressed: _toggleMode,
+          child: RichText(
+            text: TextSpan(
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface.withAlpha(220),
+              ),
+              children: [
+                TextSpan(
+                  text: _isLoginMode ? "New to Recipe Realm? " : "Already have an account? ",
+                ),
+                TextSpan(
+                  text: _isLoginMode ? "Sign Up" : "Sign In",
+                  style: TextStyle(
+                    color: Colors.green[500],
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ],
             ),
           ),
         ),
-      ),
+      ],
     );
   }
-
   Widget _buildInputField(TextEditingController controller, String label, IconData icon, {bool isPassword = false}) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;

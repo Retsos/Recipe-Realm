@@ -198,7 +198,6 @@ class _HomeScreenState extends State<HomeScreen> {
             const Text('Recipes', style: TextStyle(fontSize: 24)),
             const SizedBox(height: 20),
 
-            // Εδώ χρησιμοποιούμε το ανανεώσιμο Future
             FutureBuilder<List<RecipeWithFavorite>>(
               future: _recipesFuture,
               builder: (ctx, snap) {
@@ -213,28 +212,39 @@ class _HomeScreenState extends State<HomeScreen> {
                   return const Center(child: Text('No recipes found.'));
                 }
 
+                final isPortrait = MediaQuery.of(context).orientation == Orientation.portrait;
+                final visibleItems = list.length > 3 ? 4 : list.length;
+
                 return SizedBox(
-                  height: 250,
-                  child: ListView.builder(
+                  height: isPortrait ? 280 : 500,
+                  child: GridView.builder(
                     scrollDirection: Axis.horizontal,
-                    itemCount: list.length > 3 ? 4 : list.length,
-                    itemBuilder: (c, i) {
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: isPortrait ? 1 : 2,
+                      mainAxisSpacing: 16,
+                      crossAxisSpacing: 16,
+                      childAspectRatio: 0.75,
+                    ),
+                    itemCount: visibleItems,
+                    itemBuilder: (context, i) {
                       if (i == 3 && list.length > 3) {
-                        return _buildSeeAllRecipesCard(isDark);
+                        return _buildSeeAllRecipesCard(widget.isDarkMode);
                       }
+
                       final rf = list[i];
                       return RecipeCard(
-                        documentId:      rf.recipe.documentId,
-                        name:            rf.recipe.name,
-                        imageUrl:        rf.recipe.assetPath,
-                        prepTime:        rf.recipe.prepTime,
-                        servings:        rf.recipe.servings,
-                        Introduction:    rf.recipe.Introduction,
-                        category:        rf.recipe.category,
-                        difficulty:      rf.recipe.difficulty,
+                        documentId: rf.recipe.documentId,
+                        name: rf.recipe.name,
+                        imageUrl: rf.recipe.assetPath,
+                        prepTime: rf.recipe.prepTime,
+                        servings: rf.recipe.servings,
+                        Introduction: rf.recipe.Introduction,
+                        category: rf.recipe.category,
+                        difficulty: rf.recipe.difficulty,
                         ingredientsAmount: rf.recipe.ingredientsAmount,
-                        ingredients:     rf.recipe.ingredients,
-                        instructions:    rf.recipe.instructions,
+                        ingredients: rf.recipe.ingredients,
+                        instructions: rf.recipe.instructions,
                       );
                     },
                   ),

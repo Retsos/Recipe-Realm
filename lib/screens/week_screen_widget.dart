@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'dart:async';
 import '../main.dart';
+import 'login_register_widget.dart';
 
 /// Model for a Recipe.
 class Recipe {
@@ -225,6 +226,7 @@ class _WeekScreenState extends State<WeekScreen> {
   String _completionMessage = '';
   String _completedDayName = '';
   late StreamSubscription<dynamic> _connectivitySub;
+  int _selectedDayIndex = 0;
 
   bool _hasInternet = true;
 
@@ -738,6 +740,90 @@ class _WeekScreenState extends State<WeekScreen> {
   Widget build(BuildContext context) {
     final isDarkMode = Provider.of<ThemeProvider>(context).isDarkMode;
     final weekDates = getWeekDates();
+    final orientation = MediaQuery.of(context).orientation;
+    final isLandscape = orientation == Orientation.landscape;
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text("Weekly Meal Plan"),
+          foregroundColor: isDarkMode? Colors.black : Colors.white,
+          backgroundColor: Colors.green,
+          elevation: 0,
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.lock_outline, size: 60, color: Colors.grey[500]),
+              const SizedBox(height: 16),
+              Text(
+                "Please sign in to access your meal plan.",
+                style: TextStyle(
+                  fontSize: 16,
+                  color: isDarkMode ? Colors.grey[300] : Colors.grey[700],
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                onPressed: () {
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(builder: (_) => const LoginRegisterPage()),
+                    );
+                },
+                icon: Icon(Icons.login),
+                label: Text("Go to Login"),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green[600],
+                  foregroundColor: Colors.white,
+                ),
+              )
+            ],
+          ),
+        ),
+      );
+    }
+
+    // helper to build just the header for day i:
+    Widget _buildDayHeader(DateTime date, int index) {
+      final dateKey = DateFormat('yyyy-MM-dd').format(date);
+      final plan = _dailyPlans[dateKey] ?? {'BreakFast':'','lunch':'','dinner':''};
+      final dayName = DateFormat('EEEE','en_US').format(date);
+      final isToday = DateTime.now().difference(date).inDays == 0;
+      final isComplete = plan.values.every((v) => v.isNotEmpty);
+
+      return ListTile(
+        selected: index == _selectedDayIndex,
+        leading: CircleAvatar(
+          backgroundColor: isToday
+              ? Colors.green
+              : isComplete
+              ? Colors.green.shade300
+              : (isDarkMode ? Colors.grey[700] : Colors.grey[300]),
+          child: Text(
+            date.day.toString(),
+            style: TextStyle(
+              color: isToday || isComplete ? Colors.white : Colors.black87,
+            ),
+          ),
+        ),
+        title: Text(
+          dayName,
+          style: TextStyle(
+            fontWeight: index == _selectedDayIndex
+                ? FontWeight.bold
+                : FontWeight.w500,
+            color: isDarkMode ? Colors.white : Colors.black87,
+          ),
+        ),
+        subtitle: _buildDaySummary(plan),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => setState(() => _selectedDayIndex = index),
+      );
+    }
 
     return Scaffold(
       backgroundColor: isDarkMode ? Colors.grey[900]! : Colors.grey.shade50,
@@ -773,10 +859,46 @@ class _WeekScreenState extends State<WeekScreen> {
         ],
       ),
       body: !_hasInternet
-          ? _buildNoInternetWidget()  // Show the no internet widget when there's no connection
+          ? _buildNoInternetWidget()
           : Stack(
         children: [
-          Column(
+          isLandscape
+              ? Row(
+            children: [
+              Expanded(
+                flex: 1,
+                child: ListView.builder(
+                  itemCount: weekDates.length,
+                  itemBuilder: (ctx, i) =>
+                      _buildDayHeader(weekDates[i], i),
+                ),
+              ),
+              const VerticalDivider(width: 1),
+              VerticalDivider(width: 1),
+              Expanded(
+                flex: 2,
+                child: _recipeOptions.isEmpty
+                    ? Center(
+                  child: CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      isDarkMode ? Colors.green.shade300 : Colors.green,
+                    ),
+                  ),
+                )
+                    : ExpansionPanelList.radio(
+                  animationDuration: const Duration(milliseconds: 500),
+                  expandedHeaderPadding: const EdgeInsets.symmetric(vertical: 8),
+                  children: [
+                    _buildDayPanel(
+                      weekDates[_selectedDayIndex],
+                      _selectedDayIndex,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          )
+              : Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Container(
@@ -785,7 +907,9 @@ class _WeekScreenState extends State<WeekScreen> {
                   color: isDarkMode ? Colors.grey[850]! : Colors.white,
                   boxShadow: [
                     BoxShadow(
-                      color: isDarkMode ? Colors.black.withAlpha(25) : Colors.grey.withAlpha(25),
+                      color: isDarkMode
+                          ? Colors.black.withAlpha(25)
+                          : Colors.grey.withAlpha(25),
                       spreadRadius: 1,
                       blurRadius: 3,
                       offset: const Offset(0, 2),
@@ -817,38 +941,26 @@ class _WeekScreenState extends State<WeekScreen> {
               Expanded(
                 child: _recipeOptions.isEmpty
                     ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          isDarkMode ? Colors.green.shade300 : Colors.green,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Loading recipes...',
-                        style: TextStyle(
-                          color: isDarkMode ? Colors.grey[400] : Colors.grey.shade700,
-                        ),
-                      ),
-                    ],
+                  child: CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      isDarkMode ? Colors.green.shade300 : Colors.green,
+                    ),
                   ),
                 )
-                : SingleChildScrollView(
+                    : SingleChildScrollView(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                   child: Column(
                     children: [
                       ExpansionPanelList.radio(
                         animationDuration: const Duration(milliseconds: 500),
-                        expandedHeaderPadding: const EdgeInsets.symmetric(vertical: 8),
+                        expandedHeaderPadding:
+                        const EdgeInsets.symmetric(vertical: 8),
                         elevation: 0,
                         children: List.generate(
                           weekDates.length,
                               (index) => _buildDayPanel(weekDates[index], index),
                         ),
                       ),
-                      // Προσθήκη του πίνακα δοκιμών στο τέλος του scroll view
                     ],
                   ),
                 ),

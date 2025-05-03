@@ -207,7 +207,6 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       body: user == null
       // Αν δεν έχει user, φαίνεται empty view
           ? _buildEmptyFavoritesView()
-      // Αν έχει user, βλέπουμε αν είμαστε online
           : FutureBuilder<bool>(
         future: Connectivity().checkConnectivity()
             .then((status) => status != ConnectivityResult.none),
@@ -241,32 +240,19 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                     final recipes = recSnap.data ?? [];
                     if (recipes.isEmpty) return _buildEmptyFavoritesView();
 
-                    return GridView.builder(
-                      padding: const EdgeInsets.all(16),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        crossAxisSpacing: 10,
-                        mainAxisSpacing: 10,
-                        childAspectRatio: 0.7,
-                      ),
-                      itemCount: recipes.length,
-                      itemBuilder: (ctx2, i) {
-                        final r = recipes[i];
-                        return RecipeCard(
-                          documentId: r.documentId,
-                          name: r.name,
-                          imageUrl: r.assetPath,
-                          prepTime: r.prepTime,
-                          servings: r.servings,
-                          Introduction: r.Introduction,
-                          category: r.category,
-                          difficulty: r.difficulty,
-                          ingredientsAmount: r.ingredientsAmount,
-                          ingredients: r.ingredients,
-                          instructions: r.instructions,
-                        );
-                      },
-                    );
+                    return _buildResponsiveGridView(context, recipes.map((r) => RecipeData(
+                      documentId: r.documentId,
+                      name: r.name,
+                      imageUrl: r.assetPath,
+                      prepTime: r.prepTime,
+                      servings: r.servings,
+                      introduction: r.Introduction,
+                      category: r.category,
+                      difficulty: r.difficulty,
+                      ingredientsAmount: r.ingredientsAmount,
+                      ingredients: r.ingredients,
+                      instructions: r.instructions,
+                    )).toList());
                   },
                 );
               },
@@ -295,7 +281,6 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                   final end = i + 10 < favorites.length ? i + 10 : favorites.length;
                   chunks.add(favorites.sublist(i, end));
                 }
-
                 return FavoritesGridView(chunks: chunks);
               },
             );
@@ -304,6 +289,85 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       ),
     );
   }
+}
+
+// A data class to standardize recipe information
+class RecipeData {
+  final String documentId;
+  final String name;
+  final String imageUrl;
+  final String prepTime;
+  final String servings;
+  final String introduction;
+  final String category;
+  final String difficulty;
+  final String ingredientsAmount;
+  final List<String> ingredients;
+  final List<String> instructions;
+
+  RecipeData({
+    required this.documentId,
+    required this.name,
+    required this.imageUrl,
+    required this.prepTime,
+    required this.servings,
+    required this.introduction,
+    required this.category,
+    required this.difficulty,
+    required this.ingredientsAmount,
+    required this.ingredients,
+    required this.instructions,
+  });
+}
+
+// A reusable function to build the grid view - UPDATED for better landscape handling
+Widget _buildResponsiveGridView(BuildContext context, List<RecipeData> recipes) {
+  final orientation = MediaQuery.of(context).orientation;
+  final size = MediaQuery.of(context).size;
+
+  // Calculate the optimal number of columns based on screen size
+  int crossAxisCount;
+  double childAspectRatio;
+  double horizontalPadding;
+
+  if (orientation == Orientation.portrait) {
+    crossAxisCount = size.width > 600 ? 3 : 2;
+    childAspectRatio = 0.7; // Matching AllRecipesScreen ratio for portrait
+    horizontalPadding = 12.0;
+  } else {
+    crossAxisCount = size.width > 600 ? 3 : 2;
+    childAspectRatio = 1.2; // Matching AllRecipesScreen ratio for landscape
+    horizontalPadding = 16.0;
+  }
+
+  return Padding(
+    padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 12),
+    child: GridView.builder(
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: crossAxisCount,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+        childAspectRatio: childAspectRatio,
+      ),
+      itemCount: recipes.length,
+      itemBuilder: (ctx, i) {
+        final recipe = recipes[i];
+        return RecipeCard(
+          documentId: recipe.documentId,
+          name: recipe.name,
+          imageUrl: recipe.imageUrl,
+          prepTime: recipe.prepTime,
+          servings: recipe.servings,
+          Introduction: recipe.introduction,
+          category: recipe.category,
+          difficulty: recipe.difficulty,
+          ingredientsAmount: recipe.ingredientsAmount,
+          ingredients: recipe.ingredients,
+          instructions: recipe.instructions,
+        );
+      },
+    ),
+  );
 }
 
 class FavoritesGridView extends StatelessWidget {
@@ -342,34 +406,24 @@ class FavoritesGridView extends StatelessWidget {
           return _buildEmptyFavoritesView(context);
         }
 
-        return GridView.builder(
-          padding: const EdgeInsets.all(16),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
-            childAspectRatio: 0.7,
-          ),
-          itemCount: allDocs.length,
-          itemBuilder: (ctx, i) {
-            final doc = allDocs[i];
-            final data = doc.data() as Map<String, dynamic>;
-            debugPrint('[FavoritesGridView] Rendering recipe card for ${doc.id}: ${data['name']}');
-            return RecipeCard(
-              documentId: doc.id,
-              name: data['name'] ?? 'No Name',
-              imageUrl: data['image'] ?? '',
-              prepTime: data['prepTime'] ?? '',
-              servings: data['servings'] ?? '',
-              Introduction: data['Introduction'] ?? '',
-              category: data['category'] ?? '',
-              difficulty: data['difficulty'] ?? '',
-              ingredientsAmount: data['ingredientsAmount'] ?? '',
-              ingredients: List<String>.from(data['ingredients'] ?? []),
-              instructions: List<String>.from(data['instructions'] ?? []),
-            );
-          },
-        );
+        final recipes = allDocs.map((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          return RecipeData(
+            documentId: doc.id,
+            name: data['name'] ?? 'No Name',
+            imageUrl: data['image'] ?? '',
+            prepTime: data['prepTime'] ?? '',
+            servings: data['servings'] ?? '',
+            introduction: data['Introduction'] ?? '',
+            category: data['category'] ?? '',
+            difficulty: data['difficulty'] ?? '',
+            ingredientsAmount: data['ingredientsAmount'] ?? '',
+            ingredients: List<String>.from(data['ingredients'] ?? []),
+            instructions: List<String>.from(data['instructions'] ?? []),
+          );
+        }).toList();
+
+        return _buildResponsiveGridView(context, recipes);
       },
     );
   }

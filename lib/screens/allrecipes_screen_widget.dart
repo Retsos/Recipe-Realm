@@ -412,11 +412,11 @@ import '../main.dart';
                 }
                 return GridView.builder(
                   padding: const EdgeInsets.all(16),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: MediaQuery.of(context).size.width > 600 ? 3 : 2,
                     crossAxisSpacing: 10,
                     mainAxisSpacing: 10,
-                    childAspectRatio: 0.7,
+                    childAspectRatio: MediaQuery.of(context).orientation == Orientation.portrait ? 0.7 : 1.2,
                   ),
                   itemCount: filtered.length,
                   itemBuilder: (ctx, i) {

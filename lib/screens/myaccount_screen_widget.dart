@@ -235,8 +235,8 @@ class _MyAccountPageState extends State<MyAccountPage> {
   Widget build(BuildContext context) {
     final User? user = FirebaseAuth.instance.currentUser;
     final theme = Theme.of(context);
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
 
-    // Check if user is not logged in
     if (user == null) {
       return Scaffold(
         appBar: AppBar(
@@ -245,43 +245,22 @@ class _MyAccountPageState extends State<MyAccountPage> {
           elevation: 0,
         ),
         body: SingleChildScrollView(
-          child: Column(
-            children: [
-              Container(
-                padding: const EdgeInsets.fromLTRB(20, 30, 20, 40),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      Colors.green[600]!,
-                      Colors.green[600]!,
-                      Colors.transparent,
-                    ],
-                    stops: const [0.0, 0.5, 0.8, 1.0],
-                  ),
-                ),
-                child: _buildProfileHeader(null, "Not logged in", "-", theme),
-              ),
-              const SizedBox(height: 30),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: _buildAccountDetailsSection("Not logged in", "Please sign in to view details", null, theme),
-              ),
-              const SizedBox(height: 30),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: _buildAppSettingsSection(theme),
-              ),
-              const SizedBox(height: 30),
-            ],
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 30),
+            child: Column(
+              children: [
+                _buildProfileHeader(null, "Not logged in", "-", theme),
+                const SizedBox(height: 30),
+                _buildAccountDetailsSection("Not logged in", "Please sign in to view details", null, theme),
+                const SizedBox(height: 30),
+                _buildAppSettingsSection(theme),
+              ],
+            ),
           ),
         ),
       );
     }
 
-    // Check if in loading state
     if (_isLoading) {
       return Scaffold(
         appBar: AppBar(
@@ -293,12 +272,9 @@ class _MyAccountPageState extends State<MyAccountPage> {
       );
     }
 
-    // If user is logged in and we have local data
-    // Use the locally stored user profile data
     final String name = _userProfile?.name ?? user.displayName ?? "User";
     final String email = _userProfile?.email ?? user.email ?? "-";
-    // We don't have created date in the local DB, so use null or provide a default
-    final DateTime? createdAt = null; // No createdAt in local DB
+    final DateTime? createdAt = null;
     final String? photoUrl = user.photoURL;
 
     return Scaffold(
@@ -307,45 +283,53 @@ class _MyAccountPageState extends State<MyAccountPage> {
         backgroundColor: Colors.green[500],
         elevation: 0,
       ),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.fromLTRB(20, 30, 20, 40),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.transparent,
-                    Colors.green[600]!,
-                    Colors.green[600]!,
-                    Colors.transparent,
-                  ],
-                  stops: const [0.0, 0.5, 0.8, 1.0],
+      body: SafeArea(
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 30),
+            child: isLandscape
+                ? Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 1,
+                  child: Column(
+                    children: [
+                      _buildProfileHeader(photoUrl, name, email, theme),
+                      const SizedBox(height: 30),
+                      _buildLogoutButton(context),
+                    ],
+                  ),
                 ),
-              ),
-              child: _buildProfileHeader(photoUrl, name, email, theme),
+                const SizedBox(width: 30),
+                Expanded(
+                  flex: 2,
+                  child: Column(
+                    children: [
+                      _buildAccountDetailsSection(name, email, createdAt, theme),
+                      const SizedBox(height: 30),
+                      _buildAppSettingsSection(theme),
+                    ],
+                  ),
+                ),
+              ],
+            )
+                : Column(
+              children: [
+                _buildProfileHeader(photoUrl, name, email, theme),
+                const SizedBox(height: 30),
+                _buildAccountDetailsSection(name, email, createdAt, theme),
+                const SizedBox(height: 30),
+                _buildAppSettingsSection(theme),
+                const SizedBox(height: 30),
+                _buildLogoutButton(context),
+                const SizedBox(height: 30),
+              ],
             ),
-            const SizedBox(height: 30),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: _buildAccountDetailsSection(name, email, createdAt, theme),
-            ),
-            const SizedBox(height: 30),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: _buildAppSettingsSection(theme),
-            ),
-            const SizedBox(height: 30),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: _buildLogoutButton(context),
-            ),
-            const SizedBox(height: 30),
-          ],
+          ),
         ),
       ),
     );
   }
+
 }

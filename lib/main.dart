@@ -12,7 +12,6 @@ import 'firebase_options.dart';
 import 'package:reciperealm/screens/home_screen_widget.dart';
 import 'package:reciperealm/screens/week_screen_widget.dart';
 import 'package:reciperealm/widgets/navbar_widget.dart';
-import 'package:reciperealm/screens/contact_screen_widget.dart';
 import 'package:reciperealm/screens/createrecipe_screen_widget.dart';
 import 'package:reciperealm/widgets/guest_provider_widget.dart';
 import 'package:provider/provider.dart';
@@ -336,13 +335,6 @@ class _MainLayoutState extends State<MainLayout> {
     setState(() {
       _selectedIndex = 3;
     });
-  }
-
-  void _onContactPressed() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const ContactPage()),
-    );
   }
 
   @override
