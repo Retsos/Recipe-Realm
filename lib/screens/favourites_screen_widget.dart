@@ -56,6 +56,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
   Future<void> _checkConnection() async {
     final status = await Connectivity().checkConnectivity();
+    if (!mounted) return; // ✅ προστασία
     setState(() => _isConnected = status != ConnectivityResult.none);
   }
 

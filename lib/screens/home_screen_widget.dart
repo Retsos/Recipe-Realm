@@ -39,18 +39,18 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     updateFcmToken();
 
-    // Παίρνουμε το repo και φτιάχνουμε το αρχικό future
     final repo = Provider.of<AppRepository>(context, listen: false);
     _recipesFuture = _getRecipesWithFavorites(repo);
 
-    // Κάνουμε subscribe στο favoritesChanged
     _favSub = repo.favoritesChanged.listen((_) {
-      // Όποτε αλλάζουν τα favorites ξανατρέχουμε το future
+      // **ΠΡΟΣΘΗΚΗ**: έλεγξε αν το State είναι ακόμα mounted
+      if (!mounted) return;
       setState(() {
         _recipesFuture = _getRecipesWithFavorites(repo);
       });
     });
   }
+
 
   Future<List<RecipeWithFavorite>> _getRecipesWithFavorites(AppRepository repo) async {
     // First try to get recipes from local database

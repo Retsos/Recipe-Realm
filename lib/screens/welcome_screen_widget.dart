@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:reciperealm/widgets/auth_service.dart';
 import 'package:reciperealm/widgets/guest_provider_widget.dart';
-import 'package:reciperealm/screens/welcome2_screen_widget.dart';
 import 'package:reciperealm/main.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 

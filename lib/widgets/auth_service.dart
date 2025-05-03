@@ -121,7 +121,12 @@ class AuthService {
 
       // 🔄 Συγχρονισμός
       await _repo.initializeForUser(user.uid);
-
+      await Future.delayed(const Duration(milliseconds: 100));
+      navigatorKey.currentState?.pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => const AuthGate(),
+        ),
+      );
       return user;
     } on FirebaseAuthException catch (e) {
       throw _authError(e.code);
@@ -141,6 +146,7 @@ class AuthService {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('is_guest_logged_in');
+    await prefs.setBool('needs_onboarding', true);
 
     try {
       final cred = await _auth.createUserWithEmailAndPassword(
@@ -170,6 +176,12 @@ class AuthService {
       await _repo.initializeForUser(user.uid);
 
       print('Registration successful for user: $name ($email)');
+      await Future.delayed(const Duration(milliseconds: 100));
+      navigatorKey.currentState?.pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => const AuthGate(),
+        ),
+      );
 
 
       return user;
@@ -195,13 +207,6 @@ class AuthService {
       await _auth.signOut();
       _didInitNotifications = false;
 
-      if (context.mounted) {
-        navigatorKey.currentState!.pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const WelcomeScreen()),
-              (route) => false,
-        );
-
-      }
     } catch (e) {
       _showErrorSnackbar('Logout error: $e');
     }

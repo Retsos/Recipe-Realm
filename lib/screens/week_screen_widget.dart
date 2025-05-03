@@ -281,6 +281,7 @@ class _WeekScreenState extends State<WeekScreen> {
 
   Future<void> _loadRecipes() async {
     final recipes = await _fetchRecipes();
+    if (!mounted) return; // ✅ προστασία
     setState(() {
       _recipeOptions = recipes;
     });

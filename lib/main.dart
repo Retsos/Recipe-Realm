@@ -5,7 +5,6 @@ import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:reciperealm/screens/favourites_screen_widget.dart';
 import 'package:reciperealm/screens/settings_screen_widget.dart';
 import 'package:reciperealm/screens/welcome2_screen_widget.dart';
-import 'package:reciperealm/widgets/notifications_widget.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'database/app_repo.dart';
 import 'database/entities.dart';
@@ -262,8 +261,10 @@ class AuthGate extends StatelessWidget {
       future: _isGuestModeEnabled(),
       builder: (context, snapshot) {
         final isGuest = snapshot.data ?? false;
+        print('👥 Guest mode: $isGuest');
 
         if (user == null && isGuest) {
+          print('🚪 Guest logged in -> MainLayout');
           return MainLayout(
             isDarkMode: themeProvider.isDarkMode,
             onThemeChanged: (newValue) {
@@ -274,6 +275,7 @@ class AuthGate extends StatelessWidget {
         }
 
         if (user == null) {
+          print('🔐 No user, no guest -> WelcomeScreen');
           return const WelcomeScreen();
         }
 
@@ -285,9 +287,11 @@ class AuthGate extends StatelessWidget {
             }
 
             if (snapshot.data!) {
+              print('🎓 Needs onboarding -> Welcome2Screen');
               return const Welcome2Screen();
             }
 
+            print('✅ Logged in -> MainLayout');
             return MainLayout(
               isDarkMode: themeProvider.isDarkMode,
               onThemeChanged: (newValue) {
