@@ -259,7 +259,7 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const SectionTitle(title: 'Basic Information'),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 18),
                       TextFormField(
                         controller: _nameController,
                         decoration: decoration.copyWith(labelText: 'Recipe Name',

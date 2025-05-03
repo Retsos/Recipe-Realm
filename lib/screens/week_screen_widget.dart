@@ -744,7 +744,7 @@ class _WeekScreenState extends State<WeekScreen> {
         title: Text(
           'Weekly Meal Plan',
           style: TextStyle(
-            color: isDarkMode ? Colors.grey[100] : Colors.green.shade800,
+            color: isDarkMode ? Colors.green[700] : Colors.green.shade800,
             fontWeight: FontWeight.bold,
           ),
         ),

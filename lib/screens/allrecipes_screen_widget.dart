@@ -1,15 +1,14 @@
   import 'dart:async';
 import 'dart:io';
-
 import 'package:flutter/material.dart';
   import 'package:connectivity_plus/connectivity_plus.dart';
   import 'package:provider/provider.dart';
-  import 'package:firebase_auth/firebase_auth.dart';
   import 'package:reciperealm/widgets/recipe_card.dart';
   import '../database/FirebaseService.dart';
   import 'package:reciperealm/widgets/guest_provider_widget.dart';
 
 import '../database/app_repo.dart';
+import '../main.dart';
 
   class AllRecipesScreen extends StatefulWidget {
     final String? initialCategory;
@@ -27,7 +26,6 @@ import '../database/app_repo.dart';
     List<Map<String, dynamic>>? _recipes; // Changed to Map to handle both local and firestore recipes
     bool _isConnected = true;
     bool _showOnlyMyRecipes = false; // Added for filtering by creator
-    String? _currentUserId;
     late final FirebaseService _firebaseService;
     bool _didInit = false;
 
@@ -171,7 +169,7 @@ import '../database/app_repo.dart';
         );
         return;
       }
-
+      final isDarkMode = Provider.of<ThemeProvider>(context, listen: false).isDarkMode;
       showModalBottomSheet(
         context: context,
         isScrollControlled: true,
@@ -203,15 +201,15 @@ import '../database/app_repo.dart';
                               width: 40,
                               height: 5,
                               decoration: BoxDecoration(
-                                color: Colors.grey[300],
+                                color:  isDarkMode? Colors.grey[900] : Colors.grey,
                                 borderRadius: BorderRadius.circular(10),
                               ),
                             ),
                           ),
                           const SizedBox(height: 20),
-                          const Text('Filter Recipes', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                           Text('Filter Recipes', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold,color: isDarkMode? Colors.white : Colors.black87)),
                           const SizedBox(height: 20),
-                          const Text('Categories', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                           Text('Categories', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                           const SizedBox(height: 10),
                           Wrap(
                             spacing: 8,
@@ -221,15 +219,15 @@ import '../database/app_repo.dart';
                                 label: const Text('All'),
                                 selected: _selectedCategory == null,
                                 onSelected: (sel) => setModalState(() => _selectedCategory = sel ? null : _selectedCategory),
-                                backgroundColor: Colors.grey[200],
-                                selectedColor: Colors.green[100],
+                                backgroundColor: isDarkMode ? Colors.grey[700] : Colors.grey[200],
+                                selectedColor: isDarkMode ? Colors.green[800] : Colors.green[100],
                               ),
                               ...['BreakFast','Lunch','Dinner'].map((cat) => FilterChip(
                                 label: Text(cat),
                                 selected: _selectedCategory == cat,
                                 onSelected: (sel) => setModalState(() => _selectedCategory = sel ? cat : null),
-                                backgroundColor: Colors.grey[200],
-                                selectedColor: Colors.green[100],
+                                backgroundColor: isDarkMode ? Colors.grey[700] : Colors.grey[200],
+                                selectedColor: isDarkMode ? Colors.green[800] : Colors.green[100],
                               )),
                             ],
                           ),
@@ -244,8 +242,8 @@ import '../database/app_repo.dart';
                                 label: Text(time),
                                 selected: (time=='All' ? _selectedPrepTime==null : _selectedPrepTime==time),
                                 onSelected: (sel) => setModalState(() => _selectedPrepTime = sel ? (time=='All'?null:time) : _selectedPrepTime),
-                                backgroundColor: Colors.grey[200],
-                                selectedColor: Colors.green[100],
+                                backgroundColor: isDarkMode ? Colors.grey[700] : Colors.grey[200],
+                                selectedColor: isDarkMode ? Colors.green[800] : Colors.green[100],
                               );
                             }).toList(),
                           ),
@@ -253,8 +251,19 @@ import '../database/app_repo.dart';
                           // Creator filter
                           Row(
                             children: [
-                              Expanded(child: Text('Only show recipes created by me',
-                                  style: TextStyle(color: _isConnected ? Colors.black : Colors.grey))),
+                              Expanded(
+                                child: Text(
+                                  'Only show recipes created by me',
+                                  style: TextStyle(
+                                    // αν είσαι offline, γκρι‐απενεργοποιημένο
+                                    color: !_isConnected
+                                        ? Colors.grey[400]
+                                    // αλλιώς λευκό σε dark mode, ή σκούρο σχεδόν μαύρο σε light mode
+                                        : (isDarkMode ? Colors.white : Colors.black87),
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ),
                               Switch(
                                 value: _showOnlyMyRecipes,
                                 onChanged: _isConnected
