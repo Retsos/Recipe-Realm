@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -9,13 +11,12 @@ import '../database/entities.dart';
 import 'package:flutter/material.dart';
 import 'dart:io';
 import '../main.dart';
-import '../screens/welcome_screen_widget.dart';
+import 'notifications_widget.dart';
 
 class AuthService {
   static final FirebaseAuth _auth      = FirebaseAuth.instance;
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static bool _didInitNotifications = false;
-  static bool didCheckNotificationPrompt = false;
 
   /// Must be called once (e.g. in main) with your shared repository:
   ///
@@ -42,8 +43,14 @@ class AuthService {
 
   static Future<bool> hasRealInternet() async {
     try {
-      final result = await InternetAddress.lookup('example.com');
+      final result = await InternetAddress
+          .lookup('example.com')
+          .timeout(const Duration(seconds: 5));
       return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+    } on SocketException catch (_) {
+      return false;
+    } on TimeoutException catch (_) {
+      return false;
     } catch (_) {
       return false;
     }
@@ -76,6 +83,32 @@ class AuthService {
 
     }
   }
+  /// Key στο SharedPreferences για κάθε user
+  static String _promptKeyFor(String uid) => 'notification_prompted_$uid';
+
+  /// Εμφάνιση του prompt _μία_ φορά ανά user
+  static Future<void> _maybeShowNotificationPrompt() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    final key = _promptKeyFor(user.uid);
+    final already = prefs.getBool(key) ?? false;
+    if (already) return;
+
+    // μικρό delay ώστε να έχει ανέβει το AuthGate/MainLayout
+    Future.delayed(const Duration(milliseconds: 200), () {
+      final ctx = navigatorKey.currentContext;
+      if (ctx != null) {
+        showDialog(
+          context: ctx,
+          builder: (_) => const NotificationPromptWidget(),
+        );
+      }
+    });
+
+    await prefs.setBool(key, true);
+  }
+
 
   /// Log in with email and password.
   static Future<User?> login(String email, String password, BuildContext context) async {
@@ -98,7 +131,6 @@ class AuthService {
       // 🔁 Ανανεώνεις τη βάση στον DatabaseProvider & στο AppRepository
       await DatabaseProvider.resetInstance();
       await _repo.reinitializeDatabase(); // <== αυτό λέει στο AppRepository να ξαναπάρει το νέο DB instance
-
       // 🔍 Προαιρετικός έλεγχος DB (για debug)
       //await _safeDatabaseCheck(user);
 
@@ -121,12 +153,14 @@ class AuthService {
 
       // 🔄 Συγχρονισμός
       await _repo.initializeForUser(user.uid);
+      _repo.startSyncListener();
       await Future.delayed(const Duration(milliseconds: 100));
       navigatorKey.currentState?.pushReplacement(
         MaterialPageRoute(
           builder: (_) => const AuthGate(),
         ),
       );
+      await _maybeShowNotificationPrompt();
       return user;
     } on FirebaseAuthException catch (e) {
       throw _authError(e.code);
@@ -174,6 +208,7 @@ class AuthService {
       );
       await _repo.saveLocalProfile(profile);
       await _repo.initializeForUser(user.uid);
+      _repo.startSyncListener();
 
       print('Registration successful for user: $name ($email)');
       await Future.delayed(const Duration(milliseconds: 100));
@@ -182,8 +217,7 @@ class AuthService {
           builder: (_) => const AuthGate(),
         ),
       );
-
-
+      await _maybeShowNotificationPrompt();
       return user;
     } on FirebaseAuthException catch (e) {
       throw _authError(e.code);
@@ -203,10 +237,18 @@ class AuthService {
       await FirebaseMessaging.instance.deleteToken();
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('is_guest_logged_in');
+      final current = _auth.currentUser;
+      if (current != null) {
+        await prefs.remove(_promptKeyFor(current.uid));
+      }
       await prefs.clear();
       await _auth.signOut();
+      navigatorKey.currentState?.pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => const AuthGate(),
+        ),
+      );
       _didInitNotifications = false;
-
     } catch (e) {
       _showErrorSnackbar('Logout error: $e');
     }

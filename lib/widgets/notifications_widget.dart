@@ -43,7 +43,7 @@ class _NotificationPromptWidgetState extends State<NotificationPromptWidget> {
         'notificationsEnabled': value,
       });
     }
-
+    if (!mounted) return;
     setState(() {
       _loading = false;
     });

@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'dart:async';
 import '../main.dart';
+import '../widgets/auth_service.dart';
 import 'login_register_widget.dart';
 
 /// Model for a Recipe.
@@ -77,6 +78,7 @@ class _CompletionOverlayState extends State<CompletionOverlay> with SingleTicker
         _controller.reverse().then((_) => widget.onDismiss());
       }
     });
+
   }
 
   @override
@@ -227,6 +229,7 @@ class _WeekScreenState extends State<WeekScreen> {
   String _completedDayName = '';
   late StreamSubscription<dynamic> _connectivitySub;
   int _selectedDayIndex = 0;
+  late Future<bool> _internetFuture;
 
   bool _hasInternet = true;
 
@@ -248,6 +251,7 @@ class _WeekScreenState extends State<WeekScreen> {
     super.initState();
     _subscribeConnectivity();
     _loadRecipes();
+    _internetFuture = AuthService.hasRealInternet();
     _loadPlans();
   }
 
@@ -742,241 +746,258 @@ class _WeekScreenState extends State<WeekScreen> {
     final weekDates = getWeekDates();
     final orientation = MediaQuery.of(context).orientation;
     final isLandscape = orientation == Orientation.landscape;
-    final user = FirebaseAuth.instance.currentUser;
 
-    if (user == null) {
-      return Scaffold(
-        appBar: AppBar(
-          title: const Text("Weekly Meal Plan"),
-          foregroundColor: isDarkMode? Colors.black : Colors.white,
-          backgroundColor: Colors.green,
-          elevation: 0,
-        ),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.lock_outline, size: 60, color: Colors.grey[500]),
-              const SizedBox(height: 16),
-              Text(
-                "Please sign in to access your meal plan.",
-                style: TextStyle(
-                  fontSize: 16,
-                  color: isDarkMode ? Colors.grey[300] : Colors.grey[700],
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton.icon(
-                onPressed: () {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(builder: (_) => const LoginRegisterPage()),
-                    );
-                },
-                icon: Icon(Icons.login),
-                label: Text("Go to Login"),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green[600],
-                  foregroundColor: Colors.white,
-                ),
-              )
-            ],
-          ),
-        ),
-      );
-    }
-
-    // helper to build just the header for day i:
-    Widget _buildDayHeader(DateTime date, int index) {
-      final dateKey = DateFormat('yyyy-MM-dd').format(date);
-      final plan = _dailyPlans[dateKey] ?? {'BreakFast':'','lunch':'','dinner':''};
-      final dayName = DateFormat('EEEE','en_US').format(date);
-      final isToday = DateTime.now().difference(date).inDays == 0;
-      final isComplete = plan.values.every((v) => v.isNotEmpty);
-
-      return ListTile(
-        selected: index == _selectedDayIndex,
-        leading: CircleAvatar(
-          backgroundColor: isToday
-              ? Colors.green
-              : isComplete
-              ? Colors.green.shade300
-              : (isDarkMode ? Colors.grey[700] : Colors.grey[300]),
-          child: Text(
-            date.day.toString(),
-            style: TextStyle(
-              color: isToday || isComplete ? Colors.white : Colors.black87,
+    return FutureBuilder<bool>(
+      future: _internetFuture,
+      builder: (ctx, snap) {
+        // 1) Εν αναμονή
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        // 2) Χωρίς ίντερνετ ή λάθος
+        if (snap.hasError || snap.data == false) {
+          return Scaffold(
+            appBar: AppBar(
+              title: const Text('Weekly Meal Plan'),
+              backgroundColor: Colors.green,
             ),
-          ),
-        ),
-        title: Text(
-          dayName,
-          style: TextStyle(
-            fontWeight: index == _selectedDayIndex
-                ? FontWeight.bold
-                : FontWeight.w500,
-            color: isDarkMode ? Colors.white : Colors.black87,
-          ),
-        ),
-        subtitle: _buildDaySummary(plan),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () => setState(() => _selectedDayIndex = index),
-      );
-    }
+            body: _buildNoInternetWidget(),
+          );
+        }
+        // 3) Έχεις ίντερνετ → κανονικό UI
+        // Εδώ “κόλλησε” όλο το προηγούμενό σου Scaffold
+        final user = FirebaseAuth.instance.currentUser;
+        if (user == null) {
+          return Scaffold(
+            appBar: AppBar(
+              title: const Text("Weekly Meal Plan"),
+              foregroundColor: isDarkMode? Colors.black : Colors.white,
+              backgroundColor: Colors.green,
+              elevation: 0,
+            ),
+            body: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.lock_outline, size: 60, color: Colors.grey[500]),
+                  const SizedBox(height: 16),
+                  Text(
+                    "Please sign in to access your meal plan.",
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: isDarkMode ? Colors.grey[300] : Colors.grey[700],
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(builder: (_) => const LoginRegisterPage()),
+                      );
+                    },
+                    icon: Icon(Icons.login),
+                    label: Text("Go to Login"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green[600],
+                      foregroundColor: Colors.white,
+                    ),
+                  )
+                ],
+              ),
+            ),
+          );
+        }
 
-    return Scaffold(
-      backgroundColor: isDarkMode ? Colors.grey[900]! : Colors.grey.shade50,
-      appBar: AppBar(
-        title: Text(
-          'Weekly Meal Plan',
-          style: TextStyle(
-            color: isDarkMode ? Colors.green[700] : Colors.green.shade800,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        backgroundColor: isDarkMode ? Colors.grey[850]! : Colors.white,
-        elevation: 0,
-        centerTitle: true,
-        actions: [
-          IconButton(
-            icon: Icon(Icons.refresh, color: isDarkMode ? Colors.grey[200] : Colors.green.shade700),
-            onPressed: () {
-              setState(() {
-                _loadRecipes();
-                _loadPlans();
-              });
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Refreshed plans'),
-                  duration: Duration(seconds: 1),
-                  backgroundColor: Colors.green.shade600,
-                ),
-              );
-            },
-            tooltip: 'Refresh plans',
-          ),
-        ],
-      ),
-      body: !_hasInternet
-          ? _buildNoInternetWidget()
-          : Stack(
-        children: [
-          isLandscape
-              ? Row(
-            children: [
-              Expanded(
-                flex: 1,
-                child: ListView.builder(
-                  itemCount: weekDates.length,
-                  itemBuilder: (ctx, i) =>
-                      _buildDayHeader(weekDates[i], i),
+        // helper to build just the header for day i:
+        Widget _buildDayHeader(DateTime date, int index) {
+          final dateKey = DateFormat('yyyy-MM-dd').format(date);
+          final plan = _dailyPlans[dateKey] ?? {'BreakFast':'','lunch':'','dinner':''};
+          final dayName = DateFormat('EEEE','en_US').format(date);
+          final isToday = DateTime.now().difference(date).inDays == 0;
+          final isComplete = plan.values.every((v) => v.isNotEmpty);
+
+          return ListTile(
+            selected: index == _selectedDayIndex,
+            leading: CircleAvatar(
+              backgroundColor: isToday
+                  ? Colors.green
+                  : isComplete
+                  ? Colors.green.shade300
+                  : (isDarkMode ? Colors.grey[700] : Colors.grey[300]),
+              child: Text(
+                date.day.toString(),
+                style: TextStyle(
+                  color: isToday || isComplete ? Colors.white : Colors.black87,
                 ),
               ),
-              const VerticalDivider(width: 1),
-              VerticalDivider(width: 1),
-              Expanded(
-                flex: 2,
-                child: _recipeOptions.isEmpty
-                    ? Center(
-                  child: CircularProgressIndicator(
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      isDarkMode ? Colors.green.shade300 : Colors.green,
+            ),
+            title: Text(
+              dayName,
+              style: TextStyle(
+                fontWeight: index == _selectedDayIndex
+                    ? FontWeight.bold
+                    : FontWeight.w500,
+                color: isDarkMode ? Colors.white : Colors.black87,
+              ),
+            ),
+            subtitle: _buildDaySummary(plan),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => setState(() => _selectedDayIndex = index),
+          );
+        }
+
+        return Scaffold(
+          backgroundColor: isDarkMode ? Colors.grey[900]! : Colors.grey.shade50,
+          appBar: AppBar(
+            title: Text(
+              'Weekly Meal Plan',
+              style: TextStyle(
+                color: isDarkMode ? Colors.green[700] : Colors.green.shade800,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            backgroundColor: isDarkMode ? Colors.grey[850]! : Colors.white,
+            elevation: 0,
+            centerTitle: true,
+            actions: [
+              IconButton(
+                icon: Icon(Icons.refresh, color: isDarkMode ? Colors.grey[200] : Colors.green.shade700),
+                onPressed: () {
+                  setState(() {
+                    _loadRecipes();
+                    _loadPlans();
+                  });
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Refreshed plans'),
+                      duration: Duration(seconds: 1),
+                      backgroundColor: Colors.green.shade600,
                     ),
-                  ),
-                )
-                    : ExpansionPanelList.radio(
-                  animationDuration: const Duration(milliseconds: 500),
-                  expandedHeaderPadding: const EdgeInsets.symmetric(vertical: 8),
-                  children: [
-                    _buildDayPanel(
-                      weekDates[_selectedDayIndex],
-                      _selectedDayIndex,
-                    ),
-                  ],
-                ),
+                  );
+                },
+                tooltip: 'Refresh plans',
               ),
             ],
-          )
-              : Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+          ),
+          body:  Stack(
             children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: isDarkMode ? Colors.grey[850]! : Colors.white,
-                  boxShadow: [
-                    BoxShadow(
-                      color: isDarkMode
-                          ? Colors.black.withAlpha(25)
-                          : Colors.grey.withAlpha(25),
-                      spreadRadius: 1,
-                      blurRadius: 3,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _getCurrentMonthName(),
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: isDarkMode ? Colors.grey[100] : Colors.green.shade800,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Plan your meals for the week ahead',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: isDarkMode ? Colors.grey[400] : Colors.grey.shade600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: _recipeOptions.isEmpty
-                    ? Center(
-                  child: CircularProgressIndicator(
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      isDarkMode ? Colors.green.shade300 : Colors.green,
+              isLandscape
+                  ? Row(
+                children: [
+                  Expanded(
+                    flex: 1,
+                    child: ListView.builder(
+                      itemCount: weekDates.length,
+                      itemBuilder: (ctx, i) => _buildDayHeader(weekDates[i], i),
                     ),
                   ),
-                )
-                    : SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                  child: Column(
-                    children: [
-                      ExpansionPanelList.radio(
+                  const VerticalDivider(width: 1),
+                  Expanded(
+                    flex: 2,
+                    child: _recipeOptions.isEmpty
+                        ? Center(/* loader */)
+                        : SingleChildScrollView(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: ExpansionPanelList.radio(
                         animationDuration: const Duration(milliseconds: 500),
-                        expandedHeaderPadding:
-                        const EdgeInsets.symmetric(vertical: 8),
-                        elevation: 0,
-                        children: List.generate(
-                          weekDates.length,
-                              (index) => _buildDayPanel(weekDates[index], index),
+                        expandedHeaderPadding: const EdgeInsets.symmetric(vertical: 8),
+                        children: [
+                          _buildDayPanel(
+                            weekDates[_selectedDayIndex],
+                            _selectedDayIndex,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              )
+                  : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: isDarkMode ? Colors.grey[850]! : Colors.white,
+                      boxShadow: [
+                        BoxShadow(
+                          color: isDarkMode
+                              ? Colors.black.withAlpha(25)
+                              : Colors.grey.withAlpha(25),
+                          spreadRadius: 1,
+                          blurRadius: 3,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _getCurrentMonthName(),
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: isDarkMode ? Colors.grey[100] : Colors.green.shade800,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Plan your meals for the week ahead',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: isDarkMode ? Colors.grey[400] : Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: _recipeOptions.isEmpty
+                        ? Center(
+                      child: CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          isDarkMode ? Colors.green.shade300 : Colors.green,
                         ),
                       ),
-                    ],
+                    )
+                        : SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                      child: Column(
+                        children: [
+                          ExpansionPanelList.radio(
+                            animationDuration: const Duration(milliseconds: 500),
+                            expandedHeaderPadding:
+                            const EdgeInsets.symmetric(vertical: 8),
+                            elevation: 0,
+                            children: List.generate(
+                              weekDates.length,
+                                  (index) => _buildDayPanel(weekDates[index], index),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
+              if (_showCompletionMessage)
+                CompletionOverlay(
+                  message: _completionMessage,
+                  dayName: _completedDayName,
+                  onDismiss: () => setState(() => _showCompletionMessage = false),
+                ),
             ],
           ),
-          if (_showCompletionMessage)
-            CompletionOverlay(
-              message: _completionMessage,
-              dayName: _completedDayName,
-              onDismiss: () => setState(() => _showCompletionMessage = false),
-            ),
-        ],
-      ),
+        );
+      },
     );
-  }}
+  }
+}
 
 /// Widget for displaying a recipe dropdown.
 class RecipeDropdownItem extends StatelessWidget {

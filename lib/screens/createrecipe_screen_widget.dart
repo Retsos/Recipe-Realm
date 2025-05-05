@@ -10,6 +10,7 @@ import 'package:uuid/uuid.dart';
 import 'package:provider/provider.dart';
 
 import '../main.dart';
+import '../widgets/auth_service.dart';
 
 class CreateRecipeScreen extends StatefulWidget {
   const CreateRecipeScreen({Key? key}) : super(key: key);
@@ -34,12 +35,18 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
 
   final _categories = ['Breakfast', 'Lunch', 'Dinner'];
   final _difficultyLevels = ['Easy', 'Medium', 'Hard'];
+  late Future<bool> _internetFuture;
 
   File? _selectedImage;
   bool _isUploading = false;
   final _picker = ImagePicker();
   final _supabase = Supabase.instance.client;
 
+  @override
+  void initState() {
+    super.initState();
+    _internetFuture = AuthService.hasRealInternet();
+  }
   @override
   void dispose() {
     _nameController.dispose();
@@ -179,335 +186,197 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
     _difficultyKey.currentState!.reset();
   }
 
+  Widget _buildNoInternetWidget() {
+    final isDark = Provider.of<ThemeProvider>(context).isDarkMode;
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.cloud_off, size: 64, color: isDark ? Colors.grey[500] : Colors.grey[400]),
+          const SizedBox(height: 16),
+          Text('No Internet Connection',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.grey[300] : Colors.grey[700],
+              )),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              'You need an internet connection to create a recipe.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: isDark ? Colors.grey[400] : Colors.grey[600]),
+            ),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.refresh),
+            label: const Text('Try Again'),
+            onPressed: () {
+              setState(() {
+                // recreate the future so FutureBuilder will actually call it again
+                _internetFuture = AuthService.hasRealInternet();
+              });
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+          ),
+
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final user = firebase_auth.FirebaseAuth.instance.currentUser;
-    final theme = Theme.of(context);
-    final primary = theme.colorScheme.primary;
-    final isDarkMode = Provider.of<ThemeProvider>(context).isDarkMode;
 
-    if (user == null) {
-      return Scaffold(
-        appBar: AppBar(
-          title: const Text("Create New Recipe"),
-          foregroundColor: isDarkMode? Colors.black : Colors.white,
-          backgroundColor: Colors.green,
-          elevation: 0,
-        ),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.lock_outline, size: 60, color: Colors.grey[500]),
-              const SizedBox(height: 16),
-              Text(
-                "Please sign in to create a new recipe.",
-                style: TextStyle(
-                  fontSize: 16,
-                  color: isDarkMode ? Colors.grey[300] : Colors.grey[700],
-                ),
-                textAlign: TextAlign.center,
+    return FutureBuilder<bool>(
+      future: _internetFuture,
+      builder: (ctx, snap) {
+        // 1) Pending
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        // 2) No internet or error
+        if (snap.hasError || snap.data == false) {
+          return Scaffold(
+            appBar: AppBar(
+              title: const Text('Create New Recipe'),
+              backgroundColor: Colors.green,
+            ),
+            body: _buildNoInternetWidget(),
+          );
+        }
+
+        final theme = Theme.of(context);
+        final primary = theme.colorScheme.primary;
+        final isDarkMode = Provider.of<ThemeProvider>(context).isDarkMode;
+
+        final user = firebase_auth.FirebaseAuth.instance.currentUser;
+        if (user == null) {
+          return Scaffold(
+            appBar: AppBar(
+              title: const Text("Create New Recipe"),
+              automaticallyImplyLeading: Navigator.of(context).canPop(),
+              foregroundColor: isDarkMode? Colors.black : Colors.white,
+              backgroundColor: Colors.green,
+              elevation: 0,
+            ),
+            body: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.lock_outline, size: 60, color: Colors.grey[500]),
+                  const SizedBox(height: 16),
+                  Text(
+                    "Please sign in to create a new recipe.",
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: isDarkMode ? Colors.grey[300] : Colors.grey[700],
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(builder: (_) => const LoginRegisterPage()),
+                      );
+                    },
+                    icon: Icon(Icons.login),
+                    label: Text("Go to Login"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green[600],
+                      foregroundColor: Colors.white,
+                    ),
+                  )
+                ],
               ),
-              const SizedBox(height: 24),
-              ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(builder: (_) => const LoginRegisterPage()),
-                  );
-                },
-                icon: Icon(Icons.login),
-                label: Text("Go to Login"),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green[600],
-                  foregroundColor: Colors.white,
-                ),
-              )
-            ],
-          ),
-        ),
-      );
-    }
+            ),
+          );
+        }
 
+        final decoration = InputDecoration(
+          filled: true,
+          fillColor: isDarkMode ? Colors.black26 : Colors.grey.shade50,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: primary, width: 2)),
+          contentPadding: const EdgeInsets.all(16),
+        );
 
-
-    final decoration = InputDecoration(
-      filled: true,
-      fillColor: isDarkMode ? Colors.black26 : Colors.grey.shade50,
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: primary, width: 2)),
-      contentPadding: const EdgeInsets.all(16),
-    );
-
-    return Scaffold(
-      body: SafeArea(
-        child: OrientationBuilder(
-          builder: (context, orientation) {
-            // Portrait: original scrollable form
-            if (orientation == Orientation.portrait) {
-              return CustomScrollView(
-                slivers: [
-                  SliverAppBar(
-                    expandedHeight: 220,
-                    pinned: true,
-                    backgroundColor: Colors.green[700],
-                    flexibleSpace: FlexibleSpaceBar(
-                      title: Text(
-                        'Create New Recipe',
-                        style: TextStyle(
-                          color: isDarkMode ? Colors.grey[300] : Colors.white,
-                          fontWeight: FontWeight.bold,
-                          shadows: [
-                            Shadow(
-                              offset: const Offset(1.0, 1.0),
-                              blurRadius: 3.0,
-                              color: Colors.black.withAlpha(208),
-                            ),
-                          ],
-                        ),
-                      ),
-                      background: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          Image.asset('assets/addrecipes.png', fit: BoxFit.cover),
-                          Container(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [Colors.transparent, Colors.black.withAlpha(228)],
-                              ),
+        return Scaffold(
+          body: SafeArea(
+            child: OrientationBuilder(
+              builder: (context, orientation) {
+                // Portrait: original scrollable form
+                if (orientation == Orientation.portrait) {
+                  return CustomScrollView(
+                    slivers: [
+                      SliverAppBar(
+                        expandedHeight: 220,
+                        pinned: true,
+                        backgroundColor: Colors.green[700],
+                        flexibleSpace: FlexibleSpaceBar(
+                          title: Text(
+                            'Create New Recipe',
+                            style: TextStyle(
+                              color: isDarkMode ? Colors.grey[300] : Colors.white,
+                              fontWeight: FontWeight.bold,
+                              shadows: [
+                                Shadow(
+                                  offset: const Offset(1.0, 1.0),
+                                  blurRadius: 3.0,
+                                  color: Colors.black.withAlpha(208),
+                                ),
+                              ],
                             ),
                           ),
-                        ],
-                      ),
-                    ),
-                    leading: IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.arrow_back, color: Colors.white),
-                    ),
-                  ),
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Form(
-                        key: _formKey,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Basic Info & Image Section
-                            const SectionTitle(title: 'Basic Information'),
-                            const SizedBox(height: 18),
-                            TextFormField(
-                              controller: _nameController,
-                              decoration: decoration.copyWith(
-                                  labelText: 'Recipe Name', prefixIcon: Icon(Icons.restaurant_menu, color: primary)),
-                              validator: (v) => v == null || v.isEmpty ? 'Enter name' : null,
-                            ),
-                            const SizedBox(height: 24),
-                            const SectionTitle(title: 'Recipe Image'),
-                            const SizedBox(height: 12),
-                            if (_selectedImage != null)
+                          background: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              Image.asset('assets/addrecipes.png', fit: BoxFit.cover),
                               Container(
-                                height: 200,
                                 decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(12),
-                                  image: DecorationImage(image: FileImage(_selectedImage!), fit: BoxFit.cover),
-                                ),
-                              )
-                            else if (_imageUrlController.text.isNotEmpty)
-                              Container(
-                                height: 200,
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(12),
-                                  image: DecorationImage(image: NetworkImage(_imageUrlController.text), fit: BoxFit.cover),
-                                ),
-                              )
-                            else
-                              Container(
-                                height: 200,
-                                decoration: BoxDecoration(
-                                  color: isDarkMode ? Colors.black26 : Colors.grey.shade200,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: Colors.grey.shade300),
-                                ),
-                                child: const Center(child: Text('No Image Selected', style: TextStyle(color: Colors.grey))),
-                              ),
-                            const SizedBox(height: 16),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                              children: [
-                                ElevatedButton.icon(
-                                  onPressed: _isUploading ? null : _pickImage,
-                                  icon: const Icon(Icons.photo_library),
-                                  label: const Text('Gallery'),
-                                  style: ElevatedButton.styleFrom(
-                                      backgroundColor: isDarkMode ? Colors.green[800] : primary, foregroundColor: Colors.white),
-                                ),
-                                ElevatedButton.icon(
-                                  onPressed: _isUploading ? null : _takePhoto,
-                                  icon: const Icon(Icons.camera_alt),
-                                  label: const Text('Camera'),
-                                  style: ElevatedButton.styleFrom(
-                                      backgroundColor: isDarkMode ? Colors.green[800] : primary, foregroundColor: Colors.white),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
-                            Row(
-                              children: [
-                                const Expanded(child: Divider()),
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                                  child: Text('OR', style: TextStyle(color: Colors.grey.shade600)),
-                                ),
-                                const Expanded(child: Divider()),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
-                            TextFormField(
-                              controller: _imageUrlController,
-                              decoration: decoration.copyWith(
-                                labelText: 'Image URL',
-                                prefixIcon: Icon(Icons.link, color: primary),
-                                helperText: 'Or enter an image URL directly',
-                              ),
-                              onChanged: (v) {
-                                if (v.isNotEmpty) setState(() => _selectedImage = null);
-                              },
-                            ),
-                            const SizedBox(height: 24),
-                            TextFormField(
-                              controller: _introductionController,
-                              decoration: decoration.copyWith(
-                                labelText: 'Introduction',
-                                prefixIcon: Padding(
-                                  padding: const EdgeInsets.only(bottom: 52),
-                                  child: Icon(Icons.description, color: primary),
-                                ),
-                              ),
-                              maxLines: 4,
-                              validator: (v) => v == null || v.isEmpty ? 'Enter intro' : null,
-                            ),
-                            const SizedBox(height: 24),
-                            // Recipe Details
-                            const SectionTitle(title: 'Recipe Details'),
-                            const SizedBox(height: 16),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: TextFormField(
-                                    controller: _prepTimeController,
-                                    decoration: decoration.copyWith(
-                                        labelText: 'Prep Time (min)', prefixIcon: Icon(Icons.timer, color: primary)),
-                                    keyboardType: TextInputType.number,
-                                    validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [Colors.transparent, Colors.black.withAlpha(228)],
                                   ),
                                 ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: TextFormField(
-                                    controller: _servingsController,
-                                    decoration: decoration.copyWith(
-                                        labelText: 'Servings', prefixIcon: Icon(Icons.people, color: primary)),
-                                    keyboardType: TextInputType.number,
-                                    validator: (v) => v == null || v.isEmpty ? 'Required' : null,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
-                            Row(
-                              children: [
-                                Expanded(child: CategoryDropdown(key: _categoryKey, inputDecoration: decoration, primaryColor: primary, categories: _categories)),
-                                const SizedBox(width: 16),
-                                Expanded(child: DifficultyDropdown(key: _difficultyKey, inputDecoration: decoration, primaryColor: primary, difficultyLevels: _difficultyLevels)),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
-                            AccessDropdown(key: _accessKey, inputDecoration: decoration, primaryColor: primary, accessOptions: _accessOptions, context: context),
-                            const SizedBox(height: 24),
-                            // Ingredients & Instructions
-                            const SectionTitle(title: 'Ingredients'),
-                            const SizedBox(height: 8),
-                            IngredientsSection(key: _ingredientsKey, primaryColor: primary),
-                            const SizedBox(height: 24),
-                            const SectionTitle(title: 'Instructions'),
-                            const SizedBox(height: 8),
-                            InstructionsSection(key: _instructionsKey, primaryColor: primary),
-                            const SizedBox(height: 32),
-                            Center(
-                              child: SizedBox(
-                                width: double.infinity,
-                                height: 54,
-                                child: ElevatedButton(
-                                  onPressed: _isUploading ? null : _submitRecipe,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.green[700],
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                  ),
-                                  child: _isUploading
-                                      ? const Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      CircularProgressIndicator(color: Colors.white),
-                                      SizedBox(width: 12),
-                                      Text('UPLOADING...', style: TextStyle(color: Colors.white)),
-                                    ],
-                                  )
-                                      : const Text('SUBMIT RECIPE', style: TextStyle(color: Colors.white)),
-                                ),
                               ),
-                            ),
-                            const SizedBox(height: 40),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-                ],
-              );
-            }
-
-            // Landscape: split form into two columns
-            return SingleChildScrollView(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    // AppBar replacement for landscape
-                    Row(
-                      children: [
-                        IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.arrow_back)),
-                        const SizedBox(width: 8),
-                        Text('Create New Recipe', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Form(
-                      key: _formKey,
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Left column
-                          Expanded(
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Form(
+                            key: _formKey,
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
+                                // Basic Info & Image Section
                                 const SectionTitle(title: 'Basic Information'),
-                                const SizedBox(height: 12),
+                                const SizedBox(height: 18),
                                 TextFormField(
                                   controller: _nameController,
                                   decoration: decoration.copyWith(
                                       labelText: 'Recipe Name', prefixIcon: Icon(Icons.restaurant_menu, color: primary)),
                                   validator: (v) => v == null || v.isEmpty ? 'Enter name' : null,
                                 ),
-                                const SizedBox(height: 16),
+                                const SizedBox(height: 24),
                                 const SectionTitle(title: 'Recipe Image'),
                                 const SizedBox(height: 12),
                                 if (_selectedImage != null)
                                   Container(
-                                    height: 150,
+                                    height: 200,
                                     decoration: BoxDecoration(
                                       borderRadius: BorderRadius.circular(12),
                                       image: DecorationImage(image: FileImage(_selectedImage!), fit: BoxFit.cover),
@@ -515,7 +384,7 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
                                   )
                                 else if (_imageUrlController.text.isNotEmpty)
                                   Container(
-                                    height: 150,
+                                    height: 200,
                                     decoration: BoxDecoration(
                                       borderRadius: BorderRadius.circular(12),
                                       image: DecorationImage(image: NetworkImage(_imageUrlController.text), fit: BoxFit.cover),
@@ -523,7 +392,7 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
                                   )
                                 else
                                   Container(
-                                    height: 150,
+                                    height: 200,
                                     decoration: BoxDecoration(
                                       color: isDarkMode ? Colors.black26 : Colors.grey.shade200,
                                       borderRadius: BorderRadius.circular(12),
@@ -531,7 +400,7 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
                                     ),
                                     child: const Center(child: Text('No Image Selected', style: TextStyle(color: Colors.grey))),
                                   ),
-                                const SizedBox(height: 12),
+                                const SizedBox(height: 16),
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                                   children: [
@@ -549,6 +418,17 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
                                       style: ElevatedButton.styleFrom(
                                           backgroundColor: isDarkMode ? Colors.green[800] : primary, foregroundColor: Colors.white),
                                     ),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                                Row(
+                                  children: [
+                                    const Expanded(child: Divider()),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                                      child: Text('OR', style: TextStyle(color: Colors.grey.shade600)),
+                                    ),
+                                    const Expanded(child: Divider()),
                                   ],
                                 ),
                                 const SizedBox(height: 16),
@@ -576,17 +456,10 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
                                   maxLines: 4,
                                   validator: (v) => v == null || v.isEmpty ? 'Enter intro' : null,
                                 ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          // Right column
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
+                                const SizedBox(height: 24),
+                                // Recipe Details
                                 const SectionTitle(title: 'Recipe Details'),
-                                const SizedBox(height: 12),
+                                const SizedBox(height: 16),
                                 Row(
                                   children: [
                                     Expanded(
@@ -598,7 +471,7 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
                                         validator: (v) => v == null || v.isEmpty ? 'Required' : null,
                                       ),
                                     ),
-                                    const SizedBox(width: 12),
+                                    const SizedBox(width: 16),
                                     Expanded(
                                       child: TextFormField(
                                         controller: _servingsController,
@@ -614,13 +487,14 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
                                 Row(
                                   children: [
                                     Expanded(child: CategoryDropdown(key: _categoryKey, inputDecoration: decoration, primaryColor: primary, categories: _categories)),
-                                    const SizedBox(width: 12),
+                                    const SizedBox(width: 16),
                                     Expanded(child: DifficultyDropdown(key: _difficultyKey, inputDecoration: decoration, primaryColor: primary, difficultyLevels: _difficultyLevels)),
                                   ],
                                 ),
                                 const SizedBox(height: 16),
                                 AccessDropdown(key: _accessKey, inputDecoration: decoration, primaryColor: primary, accessOptions: _accessOptions, context: context),
                                 const SizedBox(height: 24),
+                                // Ingredients & Instructions
                                 const SectionTitle(title: 'Ingredients'),
                                 const SizedBox(height: 8),
                                 IngredientsSection(key: _ingredientsKey, primaryColor: primary),
@@ -656,21 +530,213 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
                               ],
                             ),
                           ),
-                        ],
+                        ),
                       ),
+                    ],
+                  );
+                }
+
+                // Landscape: split form into two columns
+                return SingleChildScrollView(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      children: [
+                        // AppBar replacement for landscape
+                        Row(
+                          children: [
+                            const SizedBox(width: 8),
+                            Text('Create New Recipe', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Form(
+                          key: _formKey,
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Left column
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const SectionTitle(title: 'Basic Information'),
+                                    const SizedBox(height: 12),
+                                    TextFormField(
+                                      controller: _nameController,
+                                      decoration: decoration.copyWith(
+                                          labelText: 'Recipe Name', prefixIcon: Icon(Icons.restaurant_menu, color: primary)),
+                                      validator: (v) => v == null || v.isEmpty ? 'Enter name' : null,
+                                    ),
+                                    const SizedBox(height: 16),
+                                    const SectionTitle(title: 'Recipe Image'),
+                                    const SizedBox(height: 12),
+                                    if (_selectedImage != null)
+                                      Container(
+                                        height: 150,
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(12),
+                                          image: DecorationImage(image: FileImage(_selectedImage!), fit: BoxFit.cover),
+                                        ),
+                                      )
+                                    else if (_imageUrlController.text.isNotEmpty)
+                                      Container(
+                                        height: 150,
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(12),
+                                          image: DecorationImage(image: NetworkImage(_imageUrlController.text), fit: BoxFit.cover),
+                                        ),
+                                      )
+                                    else
+                                      Container(
+                                        height: 150,
+                                        decoration: BoxDecoration(
+                                          color: isDarkMode ? Colors.black26 : Colors.grey.shade200,
+                                          borderRadius: BorderRadius.circular(12),
+                                          border: Border.all(color: Colors.grey.shade300),
+                                        ),
+                                        child: const Center(child: Text('No Image Selected', style: TextStyle(color: Colors.grey))),
+                                      ),
+                                    const SizedBox(height: 12),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                                      children: [
+                                        ElevatedButton.icon(
+                                          onPressed: _isUploading ? null : _pickImage,
+                                          icon: const Icon(Icons.photo_library),
+                                          label: const Text('Gallery'),
+                                          style: ElevatedButton.styleFrom(
+                                              backgroundColor: isDarkMode ? Colors.green[800] : primary, foregroundColor: Colors.white),
+                                        ),
+                                        ElevatedButton.icon(
+                                          onPressed: _isUploading ? null : _takePhoto,
+                                          icon: const Icon(Icons.camera_alt),
+                                          label: const Text('Camera'),
+                                          style: ElevatedButton.styleFrom(
+                                              backgroundColor: isDarkMode ? Colors.green[800] : primary, foregroundColor: Colors.white),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 16),
+                                    TextFormField(
+                                      controller: _imageUrlController,
+                                      decoration: decoration.copyWith(
+                                        labelText: 'Image URL',
+                                        prefixIcon: Icon(Icons.link, color: primary),
+                                        helperText: 'Or enter an image URL directly',
+                                      ),
+                                      onChanged: (v) {
+                                        if (v.isNotEmpty) setState(() => _selectedImage = null);
+                                      },
+                                    ),
+                                    const SizedBox(height: 24),
+                                    TextFormField(
+                                      controller: _introductionController,
+                                      decoration: decoration.copyWith(
+                                        labelText: 'Introduction',
+                                        prefixIcon: Padding(
+                                          padding: const EdgeInsets.only(bottom: 52),
+                                          child: Icon(Icons.description, color: primary),
+                                        ),
+                                      ),
+                                      maxLines: 4,
+                                      validator: (v) => v == null || v.isEmpty ? 'Enter intro' : null,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              // Right column
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const SectionTitle(title: 'Recipe Details'),
+                                    const SizedBox(height: 12),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: TextFormField(
+                                            controller: _prepTimeController,
+                                            decoration: decoration.copyWith(
+                                                labelText: 'Prep Time (min)', prefixIcon: Icon(Icons.timer, color: primary)),
+                                            keyboardType: TextInputType.number,
+                                            validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: TextFormField(
+                                            controller: _servingsController,
+                                            decoration: decoration.copyWith(
+                                                labelText: 'Servings', prefixIcon: Icon(Icons.people, color: primary)),
+                                            keyboardType: TextInputType.number,
+                                            validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Row(
+                                      children: [
+                                        Expanded(child: CategoryDropdown(key: _categoryKey, inputDecoration: decoration, primaryColor: primary, categories: _categories)),
+                                        const SizedBox(width: 12),
+                                        Expanded(child: DifficultyDropdown(key: _difficultyKey, inputDecoration: decoration, primaryColor: primary, difficultyLevels: _difficultyLevels)),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 16),
+                                    AccessDropdown(key: _accessKey, inputDecoration: decoration, primaryColor: primary, accessOptions: _accessOptions, context: context),
+                                    const SizedBox(height: 24),
+                                    const SectionTitle(title: 'Ingredients'),
+                                    const SizedBox(height: 8),
+                                    IngredientsSection(key: _ingredientsKey, primaryColor: primary),
+                                    const SizedBox(height: 24),
+                                    const SectionTitle(title: 'Instructions'),
+                                    const SizedBox(height: 8),
+                                    InstructionsSection(key: _instructionsKey, primaryColor: primary),
+                                    const SizedBox(height: 32),
+                                    Center(
+                                      child: SizedBox(
+                                        width: double.infinity,
+                                        height: 54,
+                                        child: ElevatedButton(
+                                          onPressed: _isUploading ? null : _submitRecipe,
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.green[700],
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                          ),
+                                          child: _isUploading
+                                              ? const Row(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              CircularProgressIndicator(color: Colors.white),
+                                              SizedBox(width: 12),
+                                              Text('UPLOADING...', style: TextStyle(color: Colors.white)),
+                                            ],
+                                          )
+                                              : const Text('SUBMIT RECIPE', style: TextStyle(color: Colors.white)),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 40),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
-            );
-          },
-        ),
-      ),
+                  ),
+                );
+              },
+            ),
+          ),
+        );
+      },
     );
   }
 }
-
-
 
 class SectionTitle extends StatelessWidget {
   final String title;
