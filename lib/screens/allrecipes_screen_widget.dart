@@ -28,6 +28,7 @@ import '../main.dart';
     bool _showOnlyMyRecipes = false; // Added for filtering by creator
     late final FirebaseService _firebaseService;
     bool _didInit = false;
+    late final StreamSubscription<ConnectivityResult> _connSub;
 
     Future<bool> hasRealInternet({Duration timeout = const Duration(seconds: 5)}) async {
       try {
@@ -40,6 +41,7 @@ import '../main.dart';
       }
     }
 
+
     @override
     void didChangeDependencies() {
       super.didChangeDependencies();
@@ -50,16 +52,25 @@ import '../main.dart';
 
         // μόλις έχεις service, τσέκαρε σύνδεση & φόρτωσε recipes
         _checkConnectionAndLoadRecipes();
-        Connectivity().onConnectivityChanged.listen((result) {
+        _connSub = Connectivity()
+            .onConnectivityChanged
+            .listen((result) async {
           final connected = result != ConnectivityResult.none;
+          if (!mounted) return;
           if (connected != _isConnected) {
             setState(() => _isConnected = connected);
-            _checkConnectionAndLoadRecipes(showSnackbar: true);
+            await _checkConnectionAndLoadRecipes(showSnackbar: true);
           }
-        });
+        }) as StreamSubscription<ConnectivityResult>;
+
       }
     }
 
+    @override
+    void dispose() {
+      _connSub.cancel();
+      super.dispose();
+    }
 
     final List<String> _prepTimeOptions = [
       'All', '0-15min', '15-30min', '30-60min', '60+min'
@@ -86,12 +97,14 @@ import '../main.dart';
           ),
         );
       }
+      if (!mounted) return;
       setState(() => _isConnected = realNet);
       await _loadRecipes(realNet);
     }
 
 
     Future<void> _loadRecipes(bool fromFirestore) async {
+      if (!mounted) return;
       setState(() => _isLoading = true);
       try {
         if (fromFirestore) {
@@ -291,6 +304,7 @@ import '../main.dart';
                                       _showOnlyMyRecipes = false;
                                     });
                                     Navigator.pop(ctx);
+                                    if (!mounted) return;
                                     setState(() {});
                                   },
                                   style: OutlinedButton.styleFrom(
@@ -306,6 +320,8 @@ import '../main.dart';
                                 child: ElevatedButton(
                                   onPressed: () {
                                     Navigator.pop(ctx);
+                                    if (!mounted) return;
+
                                     setState(() {});
                                   },
                                   style: ElevatedButton.styleFrom(
@@ -388,7 +404,7 @@ import '../main.dart';
                       Chip(
                         label: Text('Time: $_selectedPrepTime'),
                         deleteIcon: const Icon(Icons.close, size: 16),
-                        onDeleted: () => setState(() => _selectedPrepTime = null),
+                        onDeleted: () =>  setState(() => _selectedPrepTime = null),
                       ),
                     if (_showOnlyMyRecipes)
                       Padding(
@@ -443,7 +459,7 @@ import '../main.dart';
                           ingredients: List<String>.from(recipe['ingredients']),
                           instructions: List<String>.from(recipe['instructions']),
                         ),
-                        // Add indicator for own recipes
+                        // Added indicator for own recipes
                         if (isOwnRecipe)
                           Positioned(
                             top: 8,

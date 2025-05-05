@@ -977,6 +977,8 @@ class AccessDropdownState extends State<AccessDropdown> {
       context: widget.context,
       barrierDismissible: false,
       builder: (BuildContext context) {
+        final surface = Theme.of(context).colorScheme.surface;
+        final onSurface = Theme.of(context).colorScheme.onSurface;
         return AlertDialog(
           title: const Text('Make Recipe Public?', style: TextStyle(fontWeight: FontWeight.bold)),
           content: SingleChildScrollView(
@@ -991,7 +993,7 @@ class AccessDropdownState extends State<AccessDropdown> {
           ),
           actions: <Widget>[
             TextButton(
-              child: Text('Cancel', style: TextStyle(color: widget.primaryColor)),
+              child: Text('Cancel', style: TextStyle(color: onSurface)),
               onPressed: () {
                 setState(() {
                   selectedAccess = 'private';
@@ -1001,8 +1003,8 @@ class AccessDropdownState extends State<AccessDropdown> {
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: widget.primaryColor,
-                foregroundColor: Colors.white,
+                backgroundColor: surface,
+                foregroundColor: onSurface,
               ),
               child: const Text('Yes, Make Public'),
               onPressed: () {

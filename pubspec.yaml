@@ -61,6 +61,7 @@ dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - assets/
     - assets/image.png
     - assets/ingredient.png
     - assets/addrecipes.png

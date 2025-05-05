@@ -72,41 +72,7 @@ class FullWidthRecipeCard extends StatelessWidget {
               child: SizedBox(
                 width: 120,
                 height: 110,
-                child: imageUrl.isNotEmpty
-                    ? Image.network(
-                  imageUrl,
-                  fit: BoxFit.cover,
-                  loadingBuilder: (BuildContext context, Widget child, ImageChunkEvent? loadingProgress) {
-                    if (loadingProgress == null) return child;
-                    return Center(
-                      child: CircularProgressIndicator(
-                        value: loadingProgress.expectedTotalBytes != null
-                            ? loadingProgress.cumulativeBytesLoaded /
-                            (loadingProgress.expectedTotalBytes ?? 1)
-                            : null,
-                        strokeWidth: 2,
-                      ),
-                    );
-                  },
-                  errorBuilder: (context, error, stackTrace) {
-                    return Container(
-                      color: Colors.grey.shade100,
-                      child: const Icon(
-                        Icons.restaurant,
-                        size: 40,
-                        color: Colors.grey,
-                      ),
-                    );
-                  },
-                )
-                    : Container(
-                  color: Colors.grey.shade100,
-                  child: const Icon(
-                    Icons.restaurant,
-                    size: 40,
-                    color: Colors.grey,
-                  ),
-                ),
+                child: _buildRecipeImage(),
               ),
             ),
             // Right content section
@@ -208,6 +174,35 @@ class FullWidthRecipeCard extends StatelessWidget {
       ),
     );
   }
+  Widget _buildRecipeImage() {
+    if (imageUrl.startsWith('assets/')) {
+      // local asset
+      return Image.asset(
+        imageUrl,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _placeholder(),
+      );
+    } else {
+      // remote url
+      return Image.network(
+        imageUrl,
+        fit: BoxFit.cover,
+        loadingBuilder: (ctx, child, progress) =>
+        progress == null
+            ? child
+            : Center(child: CircularProgressIndicator(value: progress.expectedTotalBytes != null
+            ? progress.cumulativeBytesLoaded / progress.expectedTotalBytes!
+            : null,
+            strokeWidth: 2)),
+        errorBuilder: (_, __, ___) => _placeholder(),
+      );
+    }
+  }
+
+  Widget _placeholder() => Container(
+    color: Colors.grey.shade100,
+    child: const Icon(Icons.restaurant, size: 40, color: Colors.grey),
+  );
 
   Widget _buildDifficultyDot(String difficulty) {
     Color dotColor;
@@ -278,33 +273,11 @@ class RecipeDetailScreen extends StatelessWidget {
             elevation: 0,
             flexibleSpace: FlexibleSpaceBar(
               background: Hero(
-                tag: 'recipe-image-$documentId',
-                child: imageUrl.isNotEmpty
-                    ? Image.network(
-                  imageUrl,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    // Handle image loading errors safely
-                    return Container(
-                      color: Colors.grey.shade100,
-                      child: const Icon(
-                        Icons.restaurant,
-                        size: 60,
-                        color: Colors.grey,
-                      ),
-                    );
-                  },
-                )
-                    : Container(
-                  color: Colors.grey.shade100,
-                  child: const Icon(
-                    Icons.restaurant,
-                    size: 60,
-                    color: Colors.grey,
-                  ),
-                ),
-              ),
+              tag: 'recipe-image-$documentId',
+              child: _buildRecipeImage(),
             ),
+
+      ),
             leading: IconButton(
               icon: Container(
                 padding: const EdgeInsets.all(8),
@@ -440,6 +413,38 @@ class RecipeDetailScreen extends StatelessWidget {
         return Icons.help_outline;
     }
   }
+
+  // Προσθήκη helper μέσα στο FullWidthRecipeCard:
+  Widget _buildRecipeImage() {
+    if (imageUrl.startsWith('assets/')) {
+      // local asset
+      return Image.asset(
+        imageUrl,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _placeholder(),
+      );
+    } else {
+      // remote url
+      return Image.network(
+        imageUrl,
+        fit: BoxFit.cover,
+        loadingBuilder: (ctx, child, progress) =>
+        progress == null
+            ? child
+            : Center(child: CircularProgressIndicator(value: progress.expectedTotalBytes != null
+            ? progress.cumulativeBytesLoaded / progress.expectedTotalBytes!
+            : null,
+            strokeWidth: 2)),
+        errorBuilder: (_, __, ___) => _placeholder(),
+      );
+    }
+  }
+
+  Widget _placeholder() => Container(
+    color: Colors.grey.shade100,
+    child: const Icon(Icons.restaurant, size: 40, color: Colors.grey),
+  );
+
 
   Widget _buildInfoItem(IconData icon, String text) {
     return Row(

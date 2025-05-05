@@ -6,6 +6,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:reciperealm/widgets/recipe_card.dart';
+import '../database/app_repo.dart';
+import '../database/entities.dart';
 import '../main.dart';
 
 class SearchResultsScreen extends StatefulWidget {
@@ -22,6 +24,8 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   bool _isCheckingInternet = true;
   bool _hasInternet = false;
   bool _isLoadingRecipes = true;
+  List<RecipeEntity> _localRecipes = [];
+  bool _isLoadingLocal = true;
 
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _allRecipes = [];
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _recipesSub;
@@ -33,6 +37,17 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     super.initState();
     _checkInternetConnection();
     _subscribeRecipesStream();
+    _loadLocalRecipes();
+  }
+
+  Future<void> _loadLocalRecipes() async {
+    final repo = Provider.of<AppRepository>(context, listen: false);
+    final recipes = await repo.getRecipes();
+    if (!mounted) return;
+    setState(() {
+      _localRecipes = recipes;
+      _isLoadingLocal = false;
+    });
   }
 
   @override
@@ -116,33 +131,69 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     if (_isCheckingInternet) {
       return const Center(child: CircularProgressIndicator());
     }
+    // 2) Offline branch
     if (!_hasInternet) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.signal_wifi_off, size: 60, color: Colors.grey),
-            const SizedBox(height: 16),
-            Text(
-              'No Internet Connection',
-              style: TextStyle(color: isDarkMode ? Colors.white : Colors.black),
+      if (_searchTerm.isEmpty) {
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.search, size: 80, color: Colors.grey),
+              const SizedBox(height: 16),
+              Text(
+                'Start typing to search local recipes',
+                style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87),
+              ),
+            ],
+          ),
+        );
+      }
+      // αλλιώς φορτώνεις τα τοπικά
+      if (_isLoadingLocal) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      // γ) φιλτράρισμα τοπικά
+      final filtered = _localRecipes
+          .where((r) => r.name.toLowerCase().contains(_searchTerm))
+          .toList();
+      if (filtered.isEmpty) {
+        return Center(
+          child: Text(
+            'No local recipes found for "$_searchTerm"',
+            style: TextStyle(color: Colors.grey, fontSize: 18),
+            textAlign: TextAlign.center,
+          ),
+        );
+      }
+      return ListView.builder(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        itemCount: filtered.length,
+        itemBuilder: (c, i) {
+          final r = filtered[i];
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: RecipeCard(
+              documentId: r.documentId,
+              name: r.name,
+              imageUrl: r.assetPath,
+              prepTime: r.prepTime,
+              servings: r.servings,
+              Introduction: r.Introduction,
+              category: r.category,
+              difficulty: r.difficulty,
+              ingredientsAmount: r.ingredientsAmount,
+              ingredients: r.ingredients,
+              instructions: r.instructions,
             ),
-            const SizedBox(height: 12),
-            ElevatedButton(
-              onPressed: _checkInternetConnection,
-              child: const Text('Retry'),
-            ),
-          ],
-        ),
+          );
+        },
       );
     }
 
-    // 2) Φόρτωση recipes
+    // 3) Όταν έχεις internet, συνεχίζεις κανονικά με Firestore stream
     if (_isLoadingRecipes) {
       return const Center(child: CircularProgressIndicator());
     }
-
-    // 3) Όταν δεν έχει γραφτεί τίποτα
     if (_searchTerm.isEmpty) {
       return Center(
         child: Column(
@@ -158,8 +209,6 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         ),
       );
     }
-
-    // 4) Φιλτράρισμα τοπικά
     final uid = _currentUser?.uid;
     final filtered = _allRecipes.where((doc) {
       final data = doc.data();
@@ -180,7 +229,6 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
       );
     }
 
-    // 5) Εμφάνιση λίστας
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: filtered.length,
