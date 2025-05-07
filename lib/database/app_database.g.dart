@@ -253,6 +253,35 @@ class _$RecipeDao extends RecipeDao {
   }
 
   @override
+  Future<List<RecipeEntity>> searchRecipes(String searchTerm) async {
+    return _queryAdapter.queryList(
+        'SELECT *      FROM Recipe      WHERE LOWER(name) LIKE \'%\' || LOWER(?1) || \'%\'',
+        mapper: (Map<String, Object?> row) => RecipeEntity(documentId: row['documentId'] as String, name: row['name'] as String, assetPath: row['assetPath'] as String, imageUrl: row['imageUrl'] as String?, prepTime: row['prepTime'] as String, servings: row['servings'] as String, Introduction: row['Introduction'] as String, category: row['category'] as String, difficulty: row['difficulty'] as String, ingredientsAmount: row['ingredientsAmount'] as String, ingredients: _stringListConverter.decode(row['ingredients'] as String), instructions: _stringListConverter.decode(row['instructions'] as String)),
+        arguments: [searchTerm]);
+  }
+
+  @override
+  Future<List<RecipeEntity>> findFavoriteRecipes() async {
+    return _queryAdapter.queryList(
+        'SELECT Recipe.*        FROM Recipe        INNER JOIN FavoriteRecipe          ON Recipe.documentId = FavoriteRecipe.documentId',
+        mapper: (Map<String, Object?> row) => RecipeEntity(
+            documentId: row['documentId'] as String,
+            name: row['name'] as String,
+            assetPath: row['assetPath'] as String,
+            imageUrl: row['imageUrl'] as String?,
+            prepTime: row['prepTime'] as String,
+            servings: row['servings'] as String,
+            Introduction: row['Introduction'] as String,
+            category: row['category'] as String,
+            difficulty: row['difficulty'] as String,
+            ingredientsAmount: row['ingredientsAmount'] as String,
+            ingredients:
+                _stringListConverter.decode(row['ingredients'] as String),
+            instructions:
+                _stringListConverter.decode(row['instructions'] as String)));
+  }
+
+  @override
   Future<void> insertRecipe(RecipeEntity recipe) async {
     await _recipeEntityInsertionAdapter.insert(
         recipe, OnConflictStrategy.abort);

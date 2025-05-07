@@ -17,6 +17,22 @@ abstract class RecipeDao {
 
   @delete
   Future<void> deleteRecipe(RecipeEntity recipe);
+
+  @Query('''
+    SELECT * 
+    FROM Recipe 
+    WHERE LOWER(name) LIKE '%' || LOWER(:searchTerm) || '%'
+  ''')
+  Future<List<RecipeEntity>> searchRecipes(String searchTerm);
+
+  @Query(r'''
+    SELECT Recipe.* 
+      FROM Recipe 
+      INNER JOIN FavoriteRecipe 
+        ON Recipe.documentId = FavoriteRecipe.documentId
+  ''')
+  Future<List<RecipeEntity>> findFavoriteRecipes();
+
 }
 
 @dao
@@ -50,6 +66,8 @@ abstract class FavoriteRecipeDao {
 
   @Query('UPDATE FavoriteRecipe SET synced = 1 WHERE documentId = :id')
   Future<void> markSynced(String id);
+
+
 }
 
 @dao

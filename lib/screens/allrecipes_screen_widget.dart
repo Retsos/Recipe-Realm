@@ -1,14 +1,13 @@
   import 'dart:async';
 import 'dart:io';
-import 'package:flutter/material.dart';
+  import 'package:flutter/material.dart';
   import 'package:connectivity_plus/connectivity_plus.dart';
   import 'package:provider/provider.dart';
   import 'package:reciperealm/widgets/recipe_card.dart';
   import '../database/FirebaseService.dart';
   import 'package:reciperealm/widgets/guest_provider_widget.dart';
-
-import '../database/app_repo.dart';
-import '../main.dart';
+  import '../database/app_repo.dart';
+  import '../main.dart';
 
   class AllRecipesScreen extends StatefulWidget {
     final String? initialCategory;
@@ -23,12 +22,13 @@ import '../main.dart';
     String? _selectedCategory;
     String? _selectedPrepTime;
     bool _isLoading = true;
-    List<Map<String, dynamic>>? _recipes; // Changed to Map to handle both local and firestore recipes
+    List<Map<String, dynamic>>? _recipes;
     bool _isConnected = true;
-    bool _showOnlyMyRecipes = false; // Added for filtering by creator
+    bool _showOnlyMyRecipes = false;
     late final FirebaseService _firebaseService;
     bool _didInit = false;
-    late final StreamSubscription<ConnectivityResult> _connSub;
+    late final StreamSubscription _connSub;
+    String? _selectedServingsRange;
 
     Future<bool> hasRealInternet({Duration timeout = const Duration(seconds: 5)}) async {
       try {
@@ -40,7 +40,6 @@ import '../main.dart';
         return false;
       }
     }
-
 
     @override
     void didChangeDependencies() {
@@ -61,7 +60,7 @@ import '../main.dart';
             setState(() => _isConnected = connected);
             await _checkConnectionAndLoadRecipes(showSnackbar: true);
           }
-        }) as StreamSubscription<ConnectivityResult>;
+        }) ;
 
       }
     }
@@ -102,51 +101,93 @@ import '../main.dart';
       await _loadRecipes(realNet);
     }
 
-
-    Future<void> _loadRecipes(bool fromFirestore) async {
-      if (!mounted) return;
+    Future<void> _loadRecipes(bool realNet) async {
       setState(() => _isLoading = true);
+
       try {
-        if (fromFirestore) {
-          try {
-            _recipes = await _firebaseService.getAllRecipes();
-          } catch (e) {
-            debugPrint('Firestore load failed ($e), falling back to local defaults');
-            _recipes = await _firebaseService.getLocalDefaultRecipes();
-          }
-        } else {
+        if (!realNet) {
+          debugPrint('[DEBUG] Loading local recipes');
           _recipes = await _firebaseService.getLocalDefaultRecipes();
+        } else {
+          debugPrint('[DEBUG] Loading with filters: category=${_selectedCategory ?? 'all'}, servings=${_selectedServingsRange?.toString() ?? 'all'}, myRecipes=${_showOnlyMyRecipes}');
+
+          // Case 1: Only my recipes filter
+          if (_showOnlyMyRecipes && _firebaseService.currentUserId != null) {
+            _recipes = await _firebaseService.getRecipesByUser(_firebaseService.currentUserId!);
+          }
+          // Case 2: Category filter
+          else if (_selectedCategory != null && _selectedServingsRange == null) {
+            _recipes = await _firebaseService.getRecipesByCategory(_selectedCategory!);
+          }
+          // Case 3: Servings filter
+          else if (_selectedServingsRange != null && _selectedCategory == null) {
+            _recipes = await _firebaseService.getRecipesByServingsRange(_selectedServingsRange!);
+          }
+          // Case 4: Category AND Servings filter
+          else if (_selectedCategory != null && _selectedServingsRange != null) {
+            debugPrint('[DEBUG] Filtering by both category (${_selectedCategory}) and servings (${_selectedServingsRange})');
+
+            // First get by category (usually more restrictive)
+            List<Map<String, dynamic>> categoryResults = await _firebaseService.getRecipesByCategory(_selectedCategory!);
+
+            debugPrint('[DEBUG] Found ${categoryResults.length} recipes in category before servings filter');
+
+            // Then filter by exact servings match in memory
+            _recipes = categoryResults.where((recipe) {
+              final servingsStr = recipe['servings'].toString().trim();
+              debugPrint('[DEBUG] Recipe "${recipe['name']}" has servings: "$servingsStr"');
+
+              // Handle special case for "4+"
+              if (_selectedServingsRange == "4+") {
+                // Check if the servings starts with 4, 5, 6, etc.
+                if (servingsStr.startsWith("4") || servingsStr.startsWith("5") ||
+                    servingsStr.startsWith("6") || servingsStr.startsWith("7") ||
+                    servingsStr.startsWith("8") || servingsStr.startsWith("9")) {
+                  return true;
+                }
+                // Also match if the first number in a range is >= 4
+                if (servingsStr.contains("-")) {
+                  final firstPart = servingsStr.split("-")[0].trim();
+                  final firstNum = int.tryParse(firstPart) ?? 0;
+                  return firstNum >= 4;
+                }
+                return false;
+              }
+
+              // For normal ranges, do an exact string match
+              return servingsStr == _selectedServingsRange;
+            }).toList();
+
+            debugPrint('[DEBUG] Found ${_recipes!.length} recipes after servings filter');
+          }          // Case 5: No specific filters
+          else {
+            _recipes = await _firebaseService.getAllRecipes();
+          }
+
+          debugPrint('[DEBUG] Final recipes loaded: ${_recipes!.length}');
         }
       } catch (e) {
-        debugPrint('Unexpected error loading recipes: $e');
+        debugPrint('Error loading recipes: $e');
         _recipes = [];
       } finally {
         if (mounted) setState(() => _isLoading = false);
       }
-    }
-
-    List<Map<String, dynamic>> _getFilteredRecipes() {
+    }    List<Map<String, dynamic>> _getFilteredRecipes() {
       if (_recipes == null) return [];
 
+      return _recipes!.where((recipe) {
+        // Prep time (μόνο τοπικά)
+        if (_selectedPrepTime != null && !_matchesPrepTimeFilter(recipe['prepTime'])) {
+          return false;
+        }
 
-        return _recipes!.where((recipe) {
-        // 1) Όχι άλλων χρηστών αν είσαι guest
-          final metadata = recipe['metadata'] as Map<String, dynamic>;
-          final createdBy = metadata['createdBy']?.toString().trim();
-
-          final isGuest = Provider.of<GuestProvider>(context, listen: false).isGuest;
-          if (isGuest && createdBy != "") {
-            return false;
-          }
-
-          // Category filter
-        if (_selectedCategory != null && recipe['category'] != _selectedCategory) return false;
-
-        // Prep time filter
-        if (_selectedPrepTime != null && !_matchesPrepTimeFilter(recipe['prepTime'])) return false;
-
-        // My recipes filter
-        if (_showOnlyMyRecipes && !(recipe['metadata'] as Map<String, dynamic>)['isOwnRecipe']) return false;
+        // Guest check (μόνο τοπικά)
+        final metadata = recipe['metadata'] as Map<String, dynamic>;
+        final createdBy = metadata['createdBy']?.toString().trim();
+        final isGuest = Provider.of<GuestProvider>(context, listen: false).isGuest;
+        if (isGuest && createdBy != "") {
+          return false;
+        }
 
         return true;
       }).toList();
@@ -182,6 +223,13 @@ import '../main.dart';
         );
         return;
       }
+
+      // Create temporary filter variables to not affect state until applied
+      String? tempSelectedCategory = _selectedCategory;
+      String? tempSelectedPrepTime = _selectedPrepTime;
+      bool tempShowOnlyMyRecipes = _showOnlyMyRecipes;
+      String? tempSelectedServingsRange = _selectedServingsRange;
+
       final isDarkMode = Provider.of<ThemeProvider>(context, listen: false).isDarkMode;
       showModalBottomSheet(
         context: context,
@@ -220,9 +268,9 @@ import '../main.dart';
                             ),
                           ),
                           const SizedBox(height: 20),
-                           Text('Filter Recipes', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold,color: isDarkMode? Colors.white : Colors.black87)),
+                          Text('Filter Recipes', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold,color: isDarkMode? Colors.white : Colors.black87)),
                           const SizedBox(height: 20),
-                           Text('Categories', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                          Text('Categories', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                           const SizedBox(height: 10),
                           Wrap(
                             spacing: 8,
@@ -230,21 +278,57 @@ import '../main.dart';
                             children: [
                               FilterChip(
                                 label: const Text('All'),
-                                selected: _selectedCategory == null,
-                                onSelected: (sel) => setModalState(() => _selectedCategory = sel ? null : _selectedCategory),
+                                selected: tempSelectedCategory == null,
+                                onSelected: (sel) => setModalState(() => tempSelectedCategory = sel ? null : tempSelectedCategory),
                                 backgroundColor: isDarkMode ? Colors.grey[700] : Colors.grey[200],
                                 selectedColor: isDarkMode ? Colors.green[800] : Colors.green[100],
                               ),
                               ...['BreakFast','Lunch','Dinner'].map((cat) => FilterChip(
                                 label: Text(cat),
-                                selected: _selectedCategory == cat,
-                                onSelected: (sel) => setModalState(() => _selectedCategory = sel ? cat : null),
+                                selected: tempSelectedCategory == cat,
+                                onSelected: (sel) => setModalState(() => tempSelectedCategory = sel ? cat : null),
                                 backgroundColor: isDarkMode ? Colors.grey[700] : Colors.grey[200],
                                 selectedColor: isDarkMode ? Colors.green[800] : Colors.green[100],
                               )),
                             ],
                           ),
                           const SizedBox(height: 20),
+                          const Text('Servings', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              FilterChip(
+                                label: const Text('All'),
+                                selected: tempSelectedServingsRange == null,
+                                backgroundColor: isDarkMode ? Colors.grey[700] : Colors.grey[200],
+                                selectedColor: isDarkMode ? Colors.green[800] : Colors.green[100],
+                                onSelected: (_) => setModalState(() => tempSelectedServingsRange = null),
+                              ),
+                              // Change these to use string values instead of numeric ranges
+                              FilterChip(
+                                label: const Text('1-2'),
+                                selected: tempSelectedServingsRange == "1-2",
+                                backgroundColor: isDarkMode ? Colors.grey[700] : Colors.grey[200],
+                                selectedColor: isDarkMode ? Colors.green[800] : Colors.green[100],
+                                onSelected: (_) => setModalState(() => tempSelectedServingsRange = "1-2"),
+                              ),
+                              FilterChip(
+                                label: const Text('2-4'),
+                                selected: tempSelectedServingsRange == "2-4",
+                                backgroundColor: isDarkMode ? Colors.grey[700] : Colors.grey[200],
+                                selectedColor: isDarkMode ? Colors.green[800] : Colors.green[100],
+                                onSelected: (_) => setModalState(() => tempSelectedServingsRange = "2-4"),
+                              ),
+                              FilterChip(
+                                label: const Text('4+'),
+                                selected: tempSelectedServingsRange == "4+",
+                                backgroundColor: isDarkMode ? Colors.grey[700] : Colors.grey[200],
+                                selectedColor: isDarkMode ? Colors.green[800] : Colors.green[100],
+                                onSelected: (_) => setModalState(() => tempSelectedServingsRange = "4+"),
+                              ),
+                            ],
+                          ),
                           const Text('Preparation Time', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                           const SizedBox(height: 10),
                           Wrap(
@@ -253,8 +337,8 @@ import '../main.dart';
                             children: _prepTimeOptions.map((time) {
                               return FilterChip(
                                 label: Text(time),
-                                selected: (time=='All' ? _selectedPrepTime==null : _selectedPrepTime==time),
-                                onSelected: (sel) => setModalState(() => _selectedPrepTime = sel ? (time=='All'?null:time) : _selectedPrepTime),
+                                selected: (time=='All' ? tempSelectedPrepTime==null : tempSelectedPrepTime==time),
+                                onSelected: (sel) => setModalState(() => tempSelectedPrepTime = sel ? (time=='All'?null:time) : tempSelectedPrepTime),
                                 backgroundColor: isDarkMode ? Colors.grey[700] : Colors.grey[200],
                                 selectedColor: isDarkMode ? Colors.green[800] : Colors.green[100],
                               );
@@ -278,9 +362,9 @@ import '../main.dart';
                                 ),
                               ),
                               Switch(
-                                value: _showOnlyMyRecipes,
+                                value: tempShowOnlyMyRecipes,
                                 onChanged: _isConnected
-                                    ? (value) => setModalState(() => _showOnlyMyRecipes = value)
+                                    ? (value) => setModalState(() => tempShowOnlyMyRecipes = value)
                                     : null,
                                 activeColor: Colors.green[700],
                               ),
@@ -298,14 +382,13 @@ import '../main.dart';
                               Expanded(
                                 child: OutlinedButton(
                                   onPressed: () {
+                                    // Clear all filter values in the dialog
                                     setModalState(() {
-                                      _selectedCategory = null;
-                                      _selectedPrepTime = null;
-                                      _showOnlyMyRecipes = false;
+                                      tempSelectedCategory = null;
+                                      tempSelectedPrepTime = null;
+                                      tempShowOnlyMyRecipes = false;
+                                      tempSelectedServingsRange = null;
                                     });
-                                    Navigator.pop(ctx);
-                                    if (!mounted) return;
-                                    setState(() {});
                                   },
                                   style: OutlinedButton.styleFrom(
                                     foregroundColor: Colors.green[700],
@@ -319,10 +402,19 @@ import '../main.dart';
                               Expanded(
                                 child: ElevatedButton(
                                   onPressed: () {
+                                    // Apply all temporary filter values to the actual state
                                     Navigator.pop(ctx);
                                     if (!mounted) return;
 
-                                    setState(() {});
+                                    setState(() {
+                                      _selectedCategory = tempSelectedCategory;
+                                      _selectedPrepTime = tempSelectedPrepTime;
+                                      _showOnlyMyRecipes = tempShowOnlyMyRecipes;
+                                      _selectedServingsRange = tempSelectedServingsRange;
+                                    });
+
+                                    // Reload recipes with the new filters
+                                    _loadRecipes(_isConnected);
                                   },
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: Colors.green[700],
@@ -348,7 +440,64 @@ import '../main.dart';
         },
       );
     }
+// Active filters section with proper state management
+    Widget _buildActiveFiltersSection() {
+      final bool hasActiveFilters = _selectedPrepTime != null || _showOnlyMyRecipes || _selectedServingsRange != null;
 
+      if (!hasActiveFilters) return Container();
+
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            const Text('Active filters:', style: TextStyle(fontWeight: FontWeight.bold)),
+            if (_selectedPrepTime != null)
+              Chip(
+                label: Text('Time: $_selectedPrepTime'),
+                deleteIcon: const Icon(Icons.close, size: 16),
+                onDeleted: () {
+                  setState(() => _selectedPrepTime = null);
+                  _loadRecipes(_isConnected);
+                },
+              ),
+            if (_showOnlyMyRecipes)
+              Chip(
+                label: const Text('My Recipes'),
+                deleteIcon: const Icon(Icons.close, size: 16),
+                onDeleted: () {
+                  setState(() => _showOnlyMyRecipes = false);
+                  _loadRecipes(_isConnected);
+                },
+              ),
+            if (_selectedServingsRange != null)
+              Chip(
+                label: Text('Servings: $_selectedServingsRange'),
+                deleteIcon: const Icon(Icons.close, size: 16),
+                onDeleted: () {
+                  setState(() => _selectedServingsRange = null);
+                  _loadRecipes(_isConnected);
+                },
+              ),
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  _selectedPrepTime = null;
+                  _showOnlyMyRecipes = false;
+                  _selectedServingsRange = null;
+                  _selectedCategory = null;
+                });
+                _loadRecipes(_isConnected);
+              },
+              child: const Text('Clear All', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        ),
+      );
+    }
+    @override
     @override
     Widget build(BuildContext context) {
       return Scaffold(
@@ -392,32 +541,8 @@ import '../main.dart';
                 ),
               ),
             ),
-            // Active filters section
-            if (_selectedPrepTime != null || _showOnlyMyRecipes)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                child: Row(
-                  children: [
-                    const Text('Active filters:', style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(width: 8),
-                    if (_selectedPrepTime != null)
-                      Chip(
-                        label: Text('Time: $_selectedPrepTime'),
-                        deleteIcon: const Icon(Icons.close, size: 16),
-                        onDeleted: () =>  setState(() => _selectedPrepTime = null),
-                      ),
-                    if (_showOnlyMyRecipes)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 8),
-                        child: Chip(
-                          label: const Text('My Recipes'),
-                          deleteIcon: const Icon(Icons.close, size: 16),
-                          onDeleted: () => setState(() => _showOnlyMyRecipes = false),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
+            // Active filters section - now using the dedicated method
+            _buildActiveFiltersSection(),
             Expanded(
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator())
@@ -490,7 +615,7 @@ import '../main.dart';
         ),
       );
     }
-
+    // Updated category button method to properly trigger recipe loading
     Widget _buildCategoryButton(String text, bool isSelected) {
       return OutlinedButton(
         style: OutlinedButton.styleFrom(
@@ -499,7 +624,13 @@ import '../main.dart';
           side: BorderSide(color: Colors.green[500]!),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
-        onPressed: () => setState(() => _selectedCategory = text=='All'?null:text),
+        onPressed: () async {
+          setState(() {
+            _selectedCategory = text == 'All' ? null : text;
+          });
+          // Always reload recipes when category changes
+          await _loadRecipes(_isConnected);
+        },
         child: Text(text),
       );
     }

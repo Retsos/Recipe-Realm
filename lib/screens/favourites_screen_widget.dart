@@ -210,55 +210,41 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
           : FutureBuilder<bool>(
         future: Connectivity().checkConnectivity()
             .then((status) => status != ConnectivityResult.none),
+
         builder: (ctx, connSnap) {
           if (connSnap.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
           final isOnline = connSnap.data == true;
-
           if (!isOnline) {
-            // --- OFFLINE: φορτώνουμε μόνο από local DB ---
-            return FutureBuilder<List<FavoriteRecipeEntity>>(
-              future: repo.getFavorites(),
-              builder: (_, favSnap) {
-                if (favSnap.connectionState == ConnectionState.waiting) {
+            // --- OFFLINE:  μόνο  local DB ---
+              // Μέσα στο build() του FavoritesScreen, εκεί όπου σήμερα έχεις:
+            return FutureBuilder<List<RecipeEntity>>(
+              future: repo.localDb.recipeDao.findFavoriteRecipes(),
+              builder: (ctx, snap) {
+                if (snap.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                final favs = favSnap.data ?? [];
+                final favs = snap.data ?? [];
                 if (favs.isEmpty) return _buildEmptyFavoritesView();
-
-                // Φιλτράρουμε όλες τις συνταγές τοπικά
-                return FutureBuilder<List<RecipeEntity>>(
-                  future: repo.getRecipes()
-                      .then((all) => all
-                      .where((r) => favs.any((f) => f.documentId == r.documentId))
-                      .toList()),
-                  builder: (_, recSnap) {
-                    if (recSnap.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    final recipes = recSnap.data ?? [];
-                    if (recipes.isEmpty) return _buildEmptyFavoritesView();
-
-                    return _buildResponsiveGridView(context, recipes.map((r) => RecipeData(
-                      documentId: r.documentId,
-                      name: r.name,
-                      imageUrl: r.assetPath,
-                      prepTime: r.prepTime,
-                      servings: r.servings,
-                      introduction: r.Introduction,
-                      category: r.category,
-                      difficulty: r.difficulty,
-                      ingredientsAmount: r.ingredientsAmount,
-                      ingredients: r.ingredients,
-                      instructions: r.instructions,
-                    )).toList());
-                  },
-                );
+                final recipesData = favs.map((r) => RecipeData(
+                  documentId: r.documentId,
+                  name: r.name,
+                  imageUrl: r.assetPath,
+                  prepTime: r.prepTime,
+                  servings: r.servings,
+                  introduction: r.Introduction,
+                  category: r.category,
+                  difficulty: r.difficulty,
+                  ingredientsAmount: r.ingredientsAmount,
+                  ingredients: r.ingredients,
+                  instructions: r.instructions,
+                )).toList();
+                return _buildResponsiveGridView(context, recipesData);
               },
             );
           } else {
-            // --- ONLINE: χρησιμοποιούμε Firestore stream όπως πριν ---
+            // --- ONLINE:  Firestore stream   ---
             return StreamBuilder<DocumentSnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('User')

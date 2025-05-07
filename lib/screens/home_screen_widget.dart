@@ -142,7 +142,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = widget.isDarkMode;
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -185,79 +184,191 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         actions: [_buildUserAvatar()],
       ),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            _buildSearchBar(theme),
-            Container(
-              constraints: const BoxConstraints(maxHeight: 200),
-              width: double.infinity,
-              child: Image.asset('assets/image.png', fit: BoxFit.cover),
-            ),
-            const SizedBox(height: 20),
-            const Text('Recipes', style: TextStyle(fontSize: 24)),
-            const SizedBox(height: 20),
 
-            FutureBuilder<List<RecipeWithFavorite>>(
-              future: _recipesFuture,
-              builder: (ctx, snap) {
-                if (snap.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snap.hasError) {
-                  return Center(child: Text('Error: ${snap.error}'));
-                }
-                final list = snap.data ?? [];
-                if (list.isEmpty) {
-                  return const Center(child: Text('No recipes found.'));
-                }
-
-                final isPortrait = MediaQuery.of(context).orientation == Orientation.portrait;
-                final visibleItems = list.length > 3 ? 4 : list.length;
-
-                return SizedBox(
-                  height: isPortrait ? 280 : 500,
-                  child: GridView.builder(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: isPortrait ? 1 : 2,
-                      mainAxisSpacing: 16,
-                      crossAxisSpacing: 16,
-                      childAspectRatio: 0.75,
+      body: SafeArea(
+        child: OrientationBuilder(
+          builder: (context, orientation) {
+            final isPortrait = MediaQuery.of(context).orientation == Orientation.portrait;
+            if (isPortrait) {
+              return SingleChildScrollView(
+                child: Column(
+                  children: [
+                    _buildSearchBar(theme),
+                    Container(
+                      constraints: const BoxConstraints(maxHeight: 200),
+                      width: double.infinity,
+                      child: Image.asset('assets/image.png', fit: BoxFit.cover),
                     ),
-                    itemCount: visibleItems,
-                    itemBuilder: (context, i) {
-                      if (i == 3 && list.length > 3) {
-                        return _buildSeeAllRecipesCard(widget.isDarkMode);
-                      }
+                    const SizedBox(height: 20),
+                    const Text('Recipes', style: TextStyle(fontSize: 24)),
+                    const SizedBox(height: 20),
 
-                      final rf = list[i];
-                      return RecipeCard(
-                        documentId: rf.recipe.documentId,
-                        name: rf.recipe.name,
-                        imageUrl: rf.recipe.assetPath,
-                        prepTime: rf.recipe.prepTime,
-                        servings: rf.recipe.servings,
-                        Introduction: rf.recipe.Introduction,
-                        category: rf.recipe.category,
-                        difficulty: rf.recipe.difficulty,
-                        ingredientsAmount: rf.recipe.ingredientsAmount,
-                        ingredients: rf.recipe.ingredients,
-                        instructions: rf.recipe.instructions,
-                      );
-                    },
+                    FutureBuilder<List<RecipeWithFavorite>>(
+                      future: _recipesFuture,
+                      builder: (ctx, snap) {
+                        if (snap.connectionState == ConnectionState.waiting) {
+                          return const Center(child: CircularProgressIndicator());
+                        }
+                        if (snap.hasError) {
+                          return Center(child: Text('Error: ${snap.error}'));
+                        }
+                        final list = snap.data ?? [];
+                        if (list.isEmpty) {
+                          return const Center(child: Text('No recipes found.'));
+                        }
+
+                        final isPortrait = MediaQuery.of(context).orientation == Orientation.portrait;
+                        final visibleItems = list.length > 3 ? 4 : list.length;
+
+                        return SizedBox(
+                          height: isPortrait ? 280 : 500,
+                          child: GridView.builder(
+                            scrollDirection: Axis.horizontal,
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: isPortrait ? 1 : 2,
+                              mainAxisSpacing: 16,
+                              crossAxisSpacing: 16,
+                              childAspectRatio: 0.75,
+                            ),
+                            itemCount: visibleItems,
+                            itemBuilder: (context, i) {
+                              if (i == 3 && list.length > 3) {
+                                return _buildSeeAllRecipesCard(widget.isDarkMode);
+                              }
+
+                              final rf = list[i];
+                              return RecipeCard(
+                                documentId: rf.recipe.documentId,
+                                name: rf.recipe.name,
+                                imageUrl: rf.recipe.assetPath,
+                                prepTime: rf.recipe.prepTime,
+                                servings: rf.recipe.servings,
+                                Introduction: rf.recipe.Introduction,
+                                category: rf.recipe.category,
+                                difficulty: rf.recipe.difficulty,
+                                ingredientsAmount: rf.recipe.ingredientsAmount,
+                                ingredients: rf.recipe.ingredients,
+                                instructions: rf.recipe.instructions,
+                              );
+                            },
+                          ),
+                        );
+                      },
+                    ),
+                    _buildCreateMealPlan(context),
+                  ],
+                ),
+              );
+            } else {
+              return Row(
+                children: [
+                  // ── LEFT PANEL ── (Now with SingleChildScrollView)
+                  Flexible(
+                    flex: 1,
+                    child: SingleChildScrollView(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildSearchBar(theme),
+                            const SizedBox(height: 16),
+
+                            // Image container with fixed dimensions
+                            Container(
+                              height: 220,
+                              width: double.infinity,
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Image.asset(
+                                  'assets/image.png',
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                            ),
+
+                            const SizedBox(height: 16),
+                            _buildCreateMealPlan(context),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
-                );
-              },
-            ),
-            _buildCreateMealPlan(),
-          ],
+
+                  // ── RIGHT PANEL ──
+                  Flexible(
+                    flex: 2,
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 16, top: 12, bottom: 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Recipes', style: TextStyle(fontSize: 24)),
+                          const SizedBox(height: 12),
+                          Expanded(
+                            child: FutureBuilder<List<RecipeWithFavorite>>(
+                              future: _recipesFuture,
+                              builder: (ctx, snap) {
+                                if (snap.connectionState == ConnectionState.waiting) {
+                                  return const Center(child: CircularProgressIndicator());
+                                }
+                                if (snap.hasError) {
+                                  return Center(child: Text('Error: ${snap.error}'));
+                                }
+                                final list = snap.data ?? [];
+                                if (list.isEmpty) {
+                                  return const Center(child: Text('No recipes found.'));
+                                }
+
+                                final visibleItems = list.length > 5 ? 6 : list.length;
+
+                                return GridView.builder(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: 2,
+                                    mainAxisSpacing: 16,
+                                    crossAxisSpacing: 16,
+                                    childAspectRatio: 1.1,
+                                  ),
+                                  itemCount: visibleItems,
+                                  itemBuilder: (context, i) {
+                                    if (i == 5 && list.length > 5) {
+                                      return _buildSeeAllRecipesCard(widget.isDarkMode);
+                                    }
+
+                                    final rf = list[i];
+                                    return RecipeCard(
+                                      documentId: rf.recipe.documentId,
+                                      name: rf.recipe.name,
+                                      imageUrl: rf.recipe.assetPath,
+                                      prepTime: rf.recipe.prepTime,
+                                      servings: rf.recipe.servings,
+                                      Introduction: rf.recipe.Introduction,
+                                      category: rf.recipe.category,
+                                      difficulty: rf.recipe.difficulty,
+                                      ingredientsAmount: rf.recipe.ingredientsAmount,
+                                      ingredients: rf.recipe.ingredients,
+                                      instructions: rf.recipe.instructions,
+                                    );
+                                  },
+                                );
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            }
+          },
         ),
       ),
     );
   }
-
 
   Widget _buildUserAvatar() {
     return StreamBuilder<User?>(
@@ -429,34 +540,40 @@ class _HomeScreenState extends State<HomeScreen> {
     ),
   );
 
-  Widget _buildCreateMealPlan() => GestureDetector(
-    onTap: widget.onMealPlanPressed,
-    child: Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: widget.isDarkMode ? Colors.black26 : Colors.green[400],
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.green, width: 1.5),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            'Create your own meal plan',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: widget.isDarkMode ? Colors.white : Colors.grey[800],
-            ),
-          ),
+  Widget _buildCreateMealPlan(BuildContext context) {
+    final isPortrait = MediaQuery.of(context).orientation == Orientation.portrait;
 
-          Icon(Icons.arrow_forward_ios, size: 16,
-              color: widget.isDarkMode ? Colors.green : Colors.white),
-        ],
+    final fontSize = isPortrait ? 16.0 : 13.0;
+
+    return GestureDetector(
+      onTap: widget.onMealPlanPressed,
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: widget.isDarkMode ? Colors.black26 : Colors.green[400],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.green, width: 1.5),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Create your own meal plan',
+              style: TextStyle(
+                fontSize: fontSize, // Δυναμικό font size
+                fontWeight: FontWeight.bold,
+                color: widget.isDarkMode ? Colors.white : Colors.grey[800],
+              ),
+            ),
+            Icon(Icons.arrow_forward_ios,
+                size: isPortrait ? 16 : 13,
+                color: widget.isDarkMode ? Colors.green : Colors.white),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 
   void _navigateToLogin() {
     Navigator.push(

@@ -10,6 +10,24 @@ import '../database/app_repo.dart';
 import '../database/entities.dart';
 import '../main.dart';
 
+// Κλάση Debouncer για καθυστέρηση αναζήτησης
+class Debouncer {
+  final Duration delay;
+  Timer? _timer;
+
+  Debouncer({this.delay = const Duration(milliseconds: 500)});
+
+  void call(Function callback) {
+    _timer?.cancel();
+    _timer = Timer(delay, () => callback());
+  }
+
+  void dispose() {
+    _timer?.cancel();
+    _timer = null;
+  }
+}
+
 class SearchResultsScreen extends StatefulWidget {
   const SearchResultsScreen({Key? key}) : super(key: key);
 
@@ -19,15 +37,19 @@ class SearchResultsScreen extends StatefulWidget {
 
 class _SearchResultsScreenState extends State<SearchResultsScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final Debouncer _debouncer = Debouncer();
   String _searchTerm = '';
+  String _debouncedSearchTerm = '';
 
   bool _isCheckingInternet = true;
   bool _hasInternet = false;
   bool _isLoadingRecipes = true;
   List<RecipeEntity> _localRecipes = [];
   bool _isLoadingLocal = true;
+  Future<List<RecipeEntity>>? _localSearchFuture;
 
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _allRecipes = [];
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _filteredRecipes = [];
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _recipesSub;
 
   User? get _currentUser => FirebaseAuth.instance.currentUser;
@@ -54,6 +76,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   void dispose() {
     _searchController.dispose();
     _recipesSub?.cancel();
+    _debouncer.dispose();
     super.dispose();
   }
 
@@ -80,17 +103,37 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         .listen((snap) {
       setState(() {
         _allRecipes = snap.docs;
+        _filterOnlineRecipes();
         _isLoadingRecipes = false;
       });
     }, onError: (err) {
-      // Μπορείτε να χειριστείτε το σφάλμα εδώ
       setState(() => _isLoadingRecipes = false);
     });
+  }
+
+  // Μέθοδος για φιλτράρισμα online συνταγών
+  void _filterOnlineRecipes() {
+    final uid = _currentUser?.uid;
+
+    if (_debouncedSearchTerm.isEmpty) {
+      _filteredRecipes = [];
+      return;
+    }
+
+    _filteredRecipes = _allRecipes.where((doc) {
+      final data = doc.data();
+      final name = (data['name'] ?? '').toString().toLowerCase();
+      final access = (data['access'] ?? '').toString();
+      final createdBy = (data['createdBy'] ?? '').toString();
+      return name.contains(_debouncedSearchTerm) &&
+          (access == 'public' || createdBy == uid);
+    }).toList();
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Provider.of<ThemeProvider>(context).isDarkMode;
+    final repo = Provider.of<AppRepository>(context, listen: false);
 
     return Scaffold(
       appBar: AppBar(
@@ -114,12 +157,23 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                 setState(() {
                   _searchController.clear();
                   _searchTerm = '';
+                  _debouncedSearchTerm = '';
+                  _filterOnlineRecipes();
                 });
               },
             )
                 : null,
           ),
-          onChanged: (value) => setState(() => _searchTerm = value.trim().toLowerCase()),
+          onChanged: (value) {
+            setState(() => _searchTerm = value.trim().toLowerCase());
+            _debouncer(() {
+              setState(() {
+                _debouncedSearchTerm = _searchTerm;
+                _filterOnlineRecipes();
+                _localSearchFuture = repo.localDb.recipeDao.searchRecipes(_debouncedSearchTerm);
+              });
+            });
+          },
         ),
       ),
       body: _buildBody(isDark),
@@ -127,74 +181,13 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   }
 
   Widget _buildBody(bool isDarkMode) {
-    // 1) Έλεγχος σύνδεσης
+    // Check if still loading connection status
     if (_isCheckingInternet) {
       return const Center(child: CircularProgressIndicator());
     }
-    // 2) Offline branch
-    if (!_hasInternet) {
-      if (_searchTerm.isEmpty) {
-        return Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.search, size: 80, color: Colors.grey),
-              const SizedBox(height: 16),
-              Text(
-                'Start typing to search local recipes',
-                style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87),
-              ),
-            ],
-          ),
-        );
-      }
-      // αλλιώς φορτώνεις τα τοπικά
-      if (_isLoadingLocal) {
-        return const Center(child: CircularProgressIndicator());
-      }
-      // γ) φιλτράρισμα τοπικά
-      final filtered = _localRecipes
-          .where((r) => r.name.toLowerCase().contains(_searchTerm))
-          .toList();
-      if (filtered.isEmpty) {
-        return Center(
-          child: Text(
-            'No local recipes found for "$_searchTerm"',
-            style: TextStyle(color: Colors.grey, fontSize: 18),
-            textAlign: TextAlign.center,
-          ),
-        );
-      }
-      return ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        itemCount: filtered.length,
-        itemBuilder: (c, i) {
-          final r = filtered[i];
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            child: RecipeCard(
-              documentId: r.documentId,
-              name: r.name,
-              imageUrl: r.assetPath,
-              prepTime: r.prepTime,
-              servings: r.servings,
-              Introduction: r.Introduction,
-              category: r.category,
-              difficulty: r.difficulty,
-              ingredientsAmount: r.ingredientsAmount,
-              ingredients: r.ingredients,
-              instructions: r.instructions,
-            ),
-          );
-        },
-      );
-    }
 
-    // 3) Όταν έχεις internet, συνεχίζεις κανονικά με Firestore stream
-    if (_isLoadingRecipes) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_searchTerm.isEmpty) {
+    // Handle empty search term (initial state)
+    if (_debouncedSearchTerm.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -209,20 +202,21 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         ),
       );
     }
-    final uid = _currentUser?.uid;
-    final filtered = _allRecipes.where((doc) {
-      final data = doc.data();
-      final name = (data['name'] ?? '').toString().toLowerCase();
-      final access = (data['access'] ?? '').toString();
-      final createdBy = (data['createdBy'] ?? '').toString();
-      return name.contains(_searchTerm) &&
-          (access == 'public' || createdBy == uid);
-    }).toList();
 
-    if (filtered.isEmpty) {
+    // Handle offline search
+    if (!_hasInternet) {
+      return _buildOfflineSearchResults();
+    }
+
+    // Handle online search
+    if (_isLoadingRecipes) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_filteredRecipes.isEmpty) {
       return Center(
         child: Text(
-          'No recipes found for "$_searchTerm"',
+          'No recipes found for "$_debouncedSearchTerm"',
           style: TextStyle(color: Colors.grey, fontSize: 18),
           textAlign: TextAlign.center,
         ),
@@ -231,9 +225,9 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: filtered.length,
+      itemCount: _filteredRecipes.length,
       itemBuilder: (context, i) {
-        final doc = filtered[i];
+        final doc = _filteredRecipes[i];
         final data = doc.data();
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -254,4 +248,78 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
       },
     );
   }
+
+  // Μέθοδος για offline αναζήτηση με FutureBuilder
+  // Μέθοδος για offline αναζήτηση με FutureBuilder
+  Widget _buildOfflineSearchResults() {
+    // Αν δεν έχουμε αναζήτηση, επιστρέφουμε μήνυμα
+    if (_debouncedSearchTerm.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.search, size: 80, color: Colors.grey),
+            const SizedBox(height: 16),
+            Text(
+              'Start typing to search recipes',
+              style: TextStyle(color: Colors.grey, fontSize: 18),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return FutureBuilder<List<RecipeEntity>>(
+      future: _localSearchFuture, // <-- Εδώ
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(
+            child: Text(
+              'Error searching recipes: ${snapshot.error}',
+              style: const TextStyle(color: Colors.red),
+            ),
+          );
+        }
+
+        final hits = snapshot.data ?? [];
+        if (hits.isEmpty) {
+          return Center(
+            child: Text(
+              'No local recipes found for "$_debouncedSearchTerm"',
+              style: const TextStyle(color: Colors.grey, fontSize: 18),
+              textAlign: TextAlign.center,
+            ),
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          itemCount: hits.length,
+          itemBuilder: (context, i) {
+            final r = hits[i];
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: RecipeCard(
+                documentId: r.documentId,
+                name: r.name,
+                imageUrl: r.assetPath,
+                prepTime: r.prepTime,
+                servings: r.servings,
+                Introduction: r.Introduction,
+                category: r.category,
+                difficulty: r.difficulty,
+                ingredientsAmount: r.ingredientsAmount,
+                ingredients: r.ingredients,
+                instructions: r.instructions,
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
 }

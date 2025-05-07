@@ -1,8 +1,6 @@
-// lib/services/firebase_service.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-
 import 'app_repo.dart';
 
 class FirebaseService {
@@ -16,6 +14,7 @@ class FirebaseService {
 
   // Check if user is authenticated
   bool get isUserAuthenticated => _auth.currentUser != null;
+
 
 
   // Get all recipes with access control
@@ -78,6 +77,7 @@ class FirebaseService {
       return [];
     }
   }
+
   Future<List<Map<String, dynamic>>> getLocalDefaultRecipes() async {
     final localRecipes = await _repository.getRecipes(); // RecipeEntity list
     return localRecipes.map((r) => {
@@ -226,4 +226,136 @@ class FirebaseService {
       return false;
     }
   }
-}
+
+  ///ΣΥΝΤΑΓΕΣ ΓΙΑ ΣΥΓΚΕΚΡΙΜΕΝΗ ΚΑΤΗΓΟΡΙΑ ΜΕ IS EQUAL TO
+  Future<List<Map<String,dynamic>>> getRecipesByCategory(String category) async {
+    try {
+      final snap = await _firestore
+          .collection('Recipe')
+          .withConverter<Map<String,dynamic>>(
+        fromFirestore: (s, _) => s.data()!,
+        toFirestore:   (m, _) => m,
+      )
+          .where('category', isEqualTo: category)
+          .get();
+
+      return snap.docs.map(docToMap).toList();
+    } catch (e) {
+      debugPrint('Error fetching recipes by category: $e');
+      return [];
+    }
+  }
+
+  ///ΣΥΝΤΑΓΕΣ ΕΝΌΣ ΧΡΗΣΤΗ ΜΕ CREATED BY
+  Future<List<Map<String,dynamic>>> getRecipesByUser(String userId) async {
+    try {
+      final snap = await _firestore
+          .collection('Recipe')
+          .withConverter<Map<String,dynamic>>(
+        fromFirestore: (s, _) => s.data()!,
+        toFirestore:   (m, _) => m,
+      )
+          .where('createdBy', isEqualTo: userId)
+          .get();
+
+      return snap.docs.map(docToMap).toList();
+    } catch (e) {
+      debugPrint('Error fetching recipes by user: $e');
+      return [];
+    }
+  }
+
+
+  ///ΣΥΝΤΑΓΕΣ ΓΙΑ ΣΥΓΚΕΚΡΙΜΕΝΕΣ ΜΕΡΙΔΕΣ ΜΕ Numeric Range Query
+  Future<List<Map<String, dynamic>>> getRecipesByServingsRange(String servingsFilter) async {
+    try {
+      // 1. Parse filter range
+      int filterMin;
+      int? filterMax;
+
+      if (servingsFilter.endsWith('+')) {
+        filterMin = int.parse(servingsFilter.replaceAll('+', ''));
+        filterMax = null; // no upper bound
+      } else if (servingsFilter.contains('-')) {
+        final parts = servingsFilter.split('-');
+        filterMin = int.parse(parts[0]);
+        filterMax = int.parse(parts[1]);
+      } else {
+        filterMin = int.parse(servingsFilter);
+        filterMax = filterMin;
+      }
+
+      // 2. Fetch all recipes
+      final snap = await _firestore
+          .collection('Recipe')
+          .withConverter<Map<String, dynamic>>(
+        fromFirestore: (s, _) => s.data()!,
+        toFirestore: (m, _) => m,
+      )
+          .get();
+
+      // 3. Filter so that the recipe range lies entirely within το filter range
+      final allRecipes = snap.docs.map(docToMap).toList();
+      final results = allRecipes.where((recipe) {
+        final servingsStr = recipe['servings'].toString().trim();
+        int recipeMin, recipeMax;
+
+        if (servingsStr.contains('-')) {
+          final p = servingsStr.split('-');
+          recipeMin = int.tryParse(p[0].trim()) ?? 0;
+          recipeMax = int.tryParse(p[1].trim()) ?? recipeMin;
+        } else {
+          recipeMin = int.tryParse(servingsStr) ?? 0;
+          recipeMax = recipeMin;
+        }
+
+        if (filterMax == null) {
+          // case "4+"
+          return recipeMin >= filterMin;
+        } else {
+          // case "X-Y" or exact
+          return recipeMin >= filterMin && recipeMax <= filterMax;
+        }
+      }).toList();
+
+      debugPrint('[DEBUG] Found ${results.length} recipes with servings: $servingsFilter');
+      return results;
+    } catch (e) {
+      debugPrint('Error fetching recipes by servings: $e');
+      return [];
+    }
+  }
+
+  Map<String, dynamic> docToMap(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data();
+
+    String servingsStr = '';
+    final servingsData = data['servings'] ?? '';
+
+    if (servingsData is int) {
+      servingsStr = servingsData.toString();
+    } else if (servingsData is String) {
+      servingsStr = servingsData;
+    }
+
+    return {
+      'documentId': doc.id,
+      'name': data['name'] ?? '',
+      'assetPath': '',
+      'imageUrl': data['image'] ?? '',
+      'prepTime': data['prepTime'] ?? '',
+      'servings': servingsStr,
+      'Introduction': data['Introduction'] ?? '',
+      'category': data['category'] ?? '',
+      'difficulty': data['difficulty'] ?? '',
+      'ingredientsAmount': data['ingredientsAmount'] ?? '',
+      'ingredients': List<String>.from(data['ingredients'] ?? []),
+      'instructions': List<String>.from(data['instructions'] ?? []),
+      'metadata': {
+        'createdBy': data['createdBy'] ?? '',
+        'access': data['access'] ?? 'public',
+        'isOwnRecipe': data['createdBy'] == currentUserId && data['createdBy'] != '',
+        'isDefaultRecipe': data['createdBy'] == null || data['createdBy'] == '',
+      },
+    };
+  }}
