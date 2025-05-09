@@ -80,25 +80,30 @@ class FirebaseService {
 
   Future<List<Map<String, dynamic>>> getLocalDefaultRecipes() async {
     final localRecipes = await _repository.getRecipes(); // RecipeEntity list
-    return localRecipes.map((r) => {
-      'documentId': r.documentId,
-      'name': r.name,
-      'assetPath': r.assetPath,
-      'prepTime': r.prepTime,
-      'servings': r.servings,
-      'Introduction': r.Introduction,
-      'category': r.category,
-      'difficulty': r.difficulty,
-      'ingredientsAmount': r.ingredientsAmount,
-      'ingredients': r.ingredients,
-      'instructions': r.instructions,
-      'imageUrl': null,
-      'metadata': {
-        'createdBy': '',
-        'access': 'public',
-        'isOwnRecipe': false,
-        'isDefaultRecipe': true,
-      }
+    return localRecipes.map((r) {
+      final asset = r.assetPath.startsWith('assets/')
+          ? r.assetPath
+          : 'assets/${r.assetPath}';
+      return {
+        'documentId': r.documentId,
+        'name':        r.name,
+        'assetPath':   asset,
+        'prepTime':    r.prepTime,
+        'servings':    r.servings,
+        'Introduction':r.Introduction,
+        'category':    r.category,
+        'difficulty':  r.difficulty,
+        'ingredientsAmount': r.ingredientsAmount,
+        'ingredients': r.ingredients,
+        'instructions':r.instructions,
+        'imageUrl':    null,
+        'metadata': {
+          'createdBy':     '',
+          'access':        'public',
+          'isOwnRecipe':   false,
+          'isDefaultRecipe': true,
+        },
+      };
     }).toList();
   }
 

@@ -446,7 +446,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-
   Widget _buildSearchBar(ThemeData theme) => Padding(
     padding: const EdgeInsets.all(18),
     child: GestureDetector(
@@ -626,6 +625,4 @@ extension ColorBrightness on Color {
     final hslDark = hsl.withLightness((hsl.lightness - amount).clamp(0.0, 1.0));
     return hslDark.toColor();
   }
-
-
 }

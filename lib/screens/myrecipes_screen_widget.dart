@@ -1,10 +1,14 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:reciperealm/screens/login_register_widget.dart';
-
+import 'package:provider/provider.dart';
+import '../main.dart';
+import '../widgets/auth_service.dart';
 import '../widgets/recipe_card2_widget.dart';
 import 'createrecipe_screen_widget.dart';
+import 'dart:async';
 
 class MyRecipesScreen extends StatefulWidget {
   const MyRecipesScreen({Key? key}) : super(key: key);
@@ -14,6 +18,62 @@ class MyRecipesScreen extends StatefulWidget {
 }
 
 class _MyRecipesScreenState extends State<MyRecipesScreen> {
+  bool _hasInternet = true;
+  bool _isLoading = true;
+  late Future<bool> _internetFuture;
+
+
+  @override
+  void initState() {
+    super.initState();
+    _internetFuture = AuthService.hasRealInternet();
+  }
+
+
+  Widget _buildNoInternetWidget() {
+    final isDark = Provider.of<ThemeProvider>(context).isDarkMode;
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.cloud_off, size: 64, color: isDark ? Colors.grey[500] : Colors.grey[400]),
+          const SizedBox(height: 16),
+          Text('No Internet Connection',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.grey[300] : Colors.grey[700],
+              )),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              'You need an internet connection to view your recipes.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: isDark ? Colors.grey[400] : Colors.grey[600]),
+            ),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.refresh),
+            label: const Text('Try Again'),
+            onPressed: () {
+              setState(() {
+                // recreate the future so FutureBuilder will actually call it again
+                _internetFuture = AuthService.hasRealInternet();
+              });
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+          ),
+
+        ],
+      ),
+    );
+  }
+
   // Function to show delete confirmation dialog
   Future<void> _showDeleteConfirmation(BuildContext context, String recipeId, String recipeName) async {
     return showDialog<void>(
@@ -129,7 +189,6 @@ class _MyRecipesScreenState extends State<MyRecipesScreen> {
         }
       } catch (e) {
         debugPrint('Error updating favorites: $e');
-        // We don't want to fail the overall deletion just because of favorites issue
       }
 
       debugPrint('Recipe deletion completed successfully');
@@ -142,165 +201,189 @@ class _MyRecipesScreenState extends State<MyRecipesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final User? user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      Future.microtask(() {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const LoginRegisterPage()),
-        );
-      });
-      return Container();
-    }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('My Recipes'),
-        backgroundColor: Colors.green,
-      ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('Recipe')
-            .where('createdBy', isEqualTo: user.uid)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          }
+    return FutureBuilder<bool>(
+      future: _internetFuture,
+      builder: (ctx, snap){
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
 
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+        if (snap.hasError || snap.data == false) {
+          return Scaffold(
+            appBar: AppBar(
+              title: const Text('My Recipes'),
+              backgroundColor: Colors.green,
+            ),
+            body: _buildNoInternetWidget(),
+          );
+        }
 
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.menu_book,
-                    size: 80,
-                    color: Colors.grey[400],
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'No Recipes Created Yet',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 32),
-                    child: Text(
-                      'Share your culinary creations with the world by adding your first recipe',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Colors.grey,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  ElevatedButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const CreateRecipeScreen()),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                    ),
-                    child: const Text(
-                      'Create New Recipe',
-                      style: TextStyle(color: Colors.white),
-                    ),
-                  ),
-                ],
-              ),
+        final User? user = FirebaseAuth.instance.currentUser;
+        if (user == null) {
+          Future.microtask(() {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => const LoginRegisterPage()),
             );
-          }
+          });
+          return const SizedBox.shrink();
+        }
 
-          final recipeDocs = snapshot.data!.docs;
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('My Recipes'),
+            backgroundColor: Colors.green,
+          ),
+          body: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : !_hasInternet
+              ? _buildNoInternetWidget()
+              : StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('Recipe')
+                .where('createdBy', isEqualTo: user.uid)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return Center(child: Text('Error: ${snapshot.error}'));
+              }
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (snapshot.data!.docs.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.menu_book,
+                        size: 80,
+                        color: Colors.grey[400],
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'No Recipes Created Yet',
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 32),
+                        child: Text(
+                          'Share your culinary creations with the world by adding your first recipe',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      ElevatedButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const CreateRecipeScreen()),
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        ),
+                        child: const Text('Create New Recipe', style: TextStyle(color: Colors.white)),
+                      ),
+                    ],
+                  ),
+                );
+              }
 
-          // Changed from GridView to ListView for full width cards
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: recipeDocs.length,
-            itemBuilder: (context, index) {
-              final doc = recipeDocs[index];
-              final data = doc.data() as Map<String, dynamic>;
-              final recipeName = data['name'] ?? 'No Name';
+              final recipeDocs = snapshot.data!.docs;
 
-              // Check if the recipe is in user's favorites
-              return StreamBuilder<DocumentSnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection('User')
-                    .doc(user.uid)
-                    .snapshots(),
-                builder: (context, userSnapshot) {
-                  bool isFavorite = false;
+              return ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: recipeDocs.length,
+                itemBuilder: (context, index) {
+                  final doc = recipeDocs[index];
+                  final data = doc.data() as Map<String, dynamic>;
+                  final recipeName = data['name'] ?? 'No Name';
 
-                  if (userSnapshot.hasData && userSnapshot.data != null) {
-                    final userData = userSnapshot.data!.data() as Map<String, dynamic>?;
-                    final List<String> userFavorites =
-                        (userData?['favorites'] as List?)?.cast<String>() ?? [];
-                    isFavorite = userFavorites.contains(doc.id);
-                  }
+                  // Check if the recipe is in user's favorites
+                  return StreamBuilder<DocumentSnapshot>(
+                    stream: FirebaseFirestore.instance
+                        .collection('User')
+                        .doc(user.uid)
+                        .snapshots(),
+                    builder: (context, userSnapshot) {
+                      bool isFavorite = false;
 
-                  // Use the FullWidthRecipeCard directly, no need for Stack with Positioned
-                  return FullWidthRecipeCard(
-                    documentId: doc.id,
-                    name: recipeName,
-                    imageUrl: data['image'] ?? '',
-                    prepTime: data['prepTime'] ?? '',
-                    servings: data['servings'] ?? '',
-                    Introduction: data['Introduction'] ?? '',
-                    category: data['category'] ?? '',
-                    difficulty: data['difficulty'] ?? '',
-                    ingredientsAmount: data['ingredientsAmount'] ?? '',
-                    ingredients: data['ingredients'] != null
-                        ? List<String>.from(data['ingredients'] as List<dynamic>)
-                        : <String>[],
-                    instructions: data['instructions'] != null
-                        ? List<String>.from(data['instructions'] as List<dynamic>)
-                        : <String>[],
-                    isFavorite: isFavorite,
-                    onFavoritePressed: (bool newFavStatus) async {
-                      final userDocRef =
-                      FirebaseFirestore.instance.collection('User').doc(user.uid);
-                      if (newFavStatus) {
-                        await userDocRef.update({
-                          'favorites': FieldValue.arrayUnion([doc.id])
-                        });
-                      } else {
-                        await userDocRef.update({
-                          'favorites': FieldValue.arrayRemove([doc.id])
-                        });
+                      if (userSnapshot.hasData && userSnapshot.data != null) {
+                        final userData = userSnapshot.data!.data() as Map<String, dynamic>?;
+                        final List<String> userFavorites =
+                            (userData?['favorites'] as List?)?.cast<String>() ?? [];
+                        isFavorite = userFavorites.contains(doc.id);
                       }
-                    },
-                    onDeletePressed: () {
-                      _showDeleteConfirmation(context, doc.id, recipeName);
+
+                      // Use the FullWidthRecipeCard directly, no need for Stack with Positioned
+                      return FullWidthRecipeCard(
+                        documentId: doc.id,
+                        name: recipeName,
+                        imageUrl: data['image'] ?? '',
+                        prepTime: data['prepTime'] ?? '',
+                        servings: data['servings'] ?? '',
+                        Introduction: data['Introduction'] ?? '',
+                        category: data['category'] ?? '',
+                        difficulty: data['difficulty'] ?? '',
+                        ingredientsAmount: data['ingredientsAmount'] ?? '',
+                        ingredients: data['ingredients'] != null
+                            ? List<String>.from(data['ingredients'] as List<dynamic>)
+                            : <String>[],
+                        instructions: data['instructions'] != null
+                            ? List<String>.from(data['instructions'] as List<dynamic>)
+                            : <String>[],
+                        isFavorite: isFavorite,
+                        onFavoritePressed: (bool newFavStatus) async {
+                          final userDocRef =
+                          FirebaseFirestore.instance.collection('User').doc(user.uid);
+                          if (newFavStatus) {
+                            await userDocRef.update({
+                              'favorites': FieldValue.arrayUnion([doc.id])
+                            });
+                          } else {
+                            await userDocRef.update({
+                              'favorites': FieldValue.arrayRemove([doc.id])
+                            });
+                          }
+                        },
+                        onDeletePressed: () {
+                          _showDeleteConfirmation(context, doc.id, recipeName);
+                        },
+                      );
                     },
                   );
                 },
               );
             },
-          );
-        },
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const CreateRecipeScreen()),
-          );
-        },
-        backgroundColor: Colors.green,
-        child: const Icon(Icons.add),
-      ),
+          ),
+          floatingActionButton: FloatingActionButton(
+            onPressed: () {
+              if (!_hasInternet) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('You need an internet connection to view your recipes'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+                return;
+              }
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const CreateRecipeScreen()),
+              );
+            },
+            backgroundColor: Colors.green,
+            child: const Icon(Icons.add),
+          ),
+        );
+      }
     );
   }
 }

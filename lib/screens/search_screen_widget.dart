@@ -250,7 +250,6 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   }
 
   // Μέθοδος για offline αναζήτηση με FutureBuilder
-  // Μέθοδος για offline αναζήτηση με FutureBuilder
   Widget _buildOfflineSearchResults() {
     // Αν δεν έχουμε αναζήτηση, επιστρέφουμε μήνυμα
     if (_debouncedSearchTerm.isEmpty) {
@@ -270,7 +269,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     }
 
     return FutureBuilder<List<RecipeEntity>>(
-      future: _localSearchFuture, // <-- Εδώ
+      future: _localSearchFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());

@@ -84,7 +84,6 @@ class _MyAccountPageState extends State<MyAccountPage> {
     );
   }
 
-
   // Build profile header
   Widget _buildProfileHeader(String? photoUrl, String name, String email, ThemeData theme) {
     return Column(
@@ -214,6 +213,13 @@ class _MyAccountPageState extends State<MyAccountPage> {
           ),
         ),
         onPressed: () async {
+          final themeProvider = Provider.of<ThemeProvider>(context, listen: false);
+          themeProvider.toggleDarkMode(false);
+          widget.onThemeChanged(false);
+          // αν αποθηκεύεις σε DB/settings:
+          final repo = Provider.of<AppRepository>(context, listen: false);
+          await repo.updateSetting(UserSettingEntity.darkTheme(false));
+
           try {
             await AuthService.logout(context);
           } catch (e) {

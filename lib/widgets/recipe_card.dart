@@ -7,7 +7,6 @@ import 'package:provider/provider.dart';
 import '../database/app_repo.dart';
 import '../main.dart';
 import '../screens/recipe_screen_widget.dart';
-import 'package:reciperealm/widgets/auth_service.dart';
 
 class RecipeCard extends StatefulWidget {
   final String documentId;
@@ -411,37 +410,49 @@ class _RecipeCardState extends State<RecipeCard> with SingleTickerProviderStateM
   }
 
   Widget _buildImage() {
-    if (widget.imageUrl.startsWith('assets/')) {
+    final url = widget.imageUrl;
+    final file = File(url);
+
+    // 1) Asset image (π.χ. "assets/...jpg")
+    if (url.startsWith('assets/')) {
       return Image.asset(
-        widget.imageUrl,
-        width: double.infinity,
-        height: double.infinity,
+        url,
+        width: double.infinity, height: double.infinity,
         fit: BoxFit.cover,
-        errorBuilder: (c, e, st) => _buildPlaceholderImage(),
+        errorBuilder: (_, __, ___) => _buildPlaceholderImage(),
       );
     }
-    if (widget.imageUrl.isEmpty) return _buildPlaceholderImage();
+
+    // 2) Local file image (π.χ. camera/cache path)
+    if (file.existsSync()) {
+      return Image.file(
+        file,
+        width: double.infinity, height: double.infinity,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _buildPlaceholderImage(),
+      );
+    }
+
+    // 4) Network image
     return Image.network(
-      widget.imageUrl,
-      width: double.infinity,
-      height: double.infinity,
+      url,
+      width: double.infinity, height: double.infinity,
       fit: BoxFit.cover,
-      loadingBuilder: (c, child, progress) =>
-      progress == null ? child : Container(
-        width: double.infinity,
-        height: double.infinity,
+      loadingBuilder: (ctx, child, progress) =>
+      progress == null
+          ? child
+          : Container(
+        width: double.infinity, height: double.infinity,
         color: Colors.grey[200],
         child: Center(
           child: CircularProgressIndicator(
-            valueColor: AlwaysStoppedAnimation<Color>(Colors.green[400]!),
             value: progress.expectedTotalBytes != null
-                ? progress.cumulativeBytesLoaded /
-                progress.expectedTotalBytes!
+                ? progress.cumulativeBytesLoaded / progress.expectedTotalBytes!
                 : null,
           ),
         ),
       ),
-      errorBuilder: (c, e, st) => _buildPlaceholderImage(),
+      errorBuilder: (_, __, ___) => _buildPlaceholderImage(),
     );
   }
 

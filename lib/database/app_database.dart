@@ -34,6 +34,10 @@ abstract class AppDatabase extends FloorDatabase {
             migration9to10,
         ])
         .build();
+      final count = (await database.recipeDao.findAllRecipes()).length;
+      if (count == 0) {
+        await _seedInitialData(database);
+      }
     return database;
   }
 

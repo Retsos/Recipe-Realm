@@ -259,7 +259,8 @@ class _WeekScreenState extends State<WeekScreen> {
     // Initial check
     Connectivity()
         .checkConnectivity()
-        .then((result) => setState(() => _hasInternet = result != ConnectivityResult.none));
+        .then((result) =>
+        setState(() => _hasInternet = result != ConnectivityResult.none));
 
     // Listen for changes
     _connectivitySub = Connectivity().onConnectivityChanged.listen((result) {

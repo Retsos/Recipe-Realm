@@ -33,6 +33,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   firebase_core: ^3.13.0
   firebase_analytics: ^11.4.5
+  flutter_launcher_icons: ^0.14.3
   firebase_auth: ^5.5.2
   intl: ^0.20.2
   tuple: ^2.0.2
@@ -106,7 +107,11 @@ dev_dependencies:
   #     fonts:
   #       - asset: fonts/TrajanPro.ttf
   #       - asset: fonts/TrajanPro_Bold.ttf
-  #         weight: 700
+  #         weight: 700φφ
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/logo.png"

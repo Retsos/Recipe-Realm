@@ -51,6 +51,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen>
 
     // Set up connectivity listener
     Connectivity().onConnectivityChanged.listen((result) {
+      if (!mounted) return;
       setState(() {
         _isConnected = result != ConnectivityResult.none;
       });

@@ -266,8 +266,6 @@ class AuthService {
   //   }
   // }
 
-
-
   /// Update the current user's favorites list by adding or removing a recipe ID.
   static Future<void> updateUserFavorite(String recipeId, bool add) async {
     final user = _auth.currentUser;

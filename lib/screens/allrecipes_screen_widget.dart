@@ -49,7 +49,6 @@ import 'dart:io';
         final repo = Provider.of<AppRepository>(context, listen: false);
         _firebaseService = FirebaseService(repo);
 
-        // μόλις έχεις service, τσέκαρε σύνδεση & φόρτωσε recipes
         _checkConnectionAndLoadRecipes();
         _connSub = Connectivity()
             .onConnectivityChanged
@@ -145,7 +144,6 @@ import 'dart:io';
                     servingsStr.startsWith("8") || servingsStr.startsWith("9")) {
                   return true;
                 }
-                // Also match if the first number in a range is >= 4
                 if (servingsStr.contains("-")) {
                   final firstPart = servingsStr.split("-")[0].trim();
                   final firstNum = int.tryParse(firstPart) ?? 0;
@@ -172,7 +170,9 @@ import 'dart:io';
       } finally {
         if (mounted) setState(() => _isLoading = false);
       }
-    }    List<Map<String, dynamic>> _getFilteredRecipes() {
+    }
+
+    List<Map<String, dynamic>> _getFilteredRecipes() {
       if (_recipes == null) return [];
 
       return _recipes!.where((recipe) {
@@ -440,7 +440,7 @@ import 'dart:io';
         },
       );
     }
-// Active filters section with proper state management
+    // Active filters section with proper state management
     Widget _buildActiveFiltersSection() {
       final bool hasActiveFilters = _selectedPrepTime != null || _showOnlyMyRecipes || _selectedServingsRange != null;
 
@@ -497,7 +497,7 @@ import 'dart:io';
         ),
       );
     }
-    @override
+
     @override
     Widget build(BuildContext context) {
       return Scaffold(
@@ -615,6 +615,7 @@ import 'dart:io';
         ),
       );
     }
+
     // Updated category button method to properly trigger recipe loading
     Widget _buildCategoryButton(String text, bool isSelected) {
       return OutlinedButton(

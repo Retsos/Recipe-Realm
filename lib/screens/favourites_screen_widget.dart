@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -10,6 +9,7 @@ import 'package:reciperealm/database/app_repo.dart';
 
 import '../database/FirebaseDebugUtil.dart';
 import '../database/entities.dart';
+import '../widgets/auth_service.dart';
 import 'allrecipes_screen_widget.dart';
 
 class FavoritesScreen extends StatefulWidget {
@@ -22,42 +22,45 @@ class FavoritesScreen extends StatefulWidget {
 class _FavoritesScreenState extends State<FavoritesScreen> {
   late Future<List<String>> _favoriteIdsFuture;
   bool _isLoading = false;
-  late StreamSubscription _connSub;
   bool _isConnected = true;
   bool _hasShownOfflineSnackbar = false;
+  Timer? _connectivityCheckTimer;
 
   @override
   void initState() {
     super.initState();
-    // 1) αρχικός έλεγχος
-    _checkConnection();
-    // 2) ακρόαση αλλαγών
-    _connSub = Connectivity()
-        .onConnectivityChanged
-        .listen((status) {
-      final nowOnline = status != ConnectivityResult.none;
-      if (nowOnline != _isConnected) {
-        setState(() => _isConnected = nowOnline);
-        if (!nowOnline && !_hasShownOfflineSnackbar) {
-          _hasShownOfflineSnackbar = true;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Offline: showing only saved favorites'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
-      }
-      // κατά περίπτωση ξαναφορτώνουμε
-      _loadFavorites();
-    });
+    // Initial check for internet connectivity
+    _checkRealInternetConnection();
+
+    // Set up periodic internet connectivity check
+    _connectivityCheckTimer = Timer.periodic(
+      const Duration(seconds: 30),
+          (_) => _checkRealInternetConnection(),
+    );
+
     _loadFavorites();
   }
 
-  Future<void> _checkConnection() async {
-    final status = await Connectivity().checkConnectivity();
-    if (!mounted) return; // ✅ προστασία
-    setState(() => _isConnected = status != ConnectivityResult.none);
+  Future<void> _checkRealInternetConnection() async {
+    final hasInternet = await AuthService.hasRealInternet();
+    if (!mounted) return; // Protection check
+
+    if (hasInternet != _isConnected) {
+      setState(() => _isConnected = hasInternet);
+
+      if (!hasInternet && !_hasShownOfflineSnackbar) {
+        _hasShownOfflineSnackbar = true;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Offline: showing only saved favorites'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+
+      // Reload favorites when connectivity changes
+      _loadFavorites();
+    }
   }
 
   @override
@@ -77,17 +80,17 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
   @override
   void dispose() {
-    _connSub.cancel();
+    _connectivityCheckTimer?.cancel();
     super.dispose();
   }
 
   Future<List<String>> _getFavoriteRecipeIds() async {
     final repo = Provider.of<AppRepository>(context, listen: false);
-    // πάντα από local DB
+    // Always get from local DB first
     final localFavs = await repo.getFavorites();
     final ids = localFavs.map((f) => f.documentId).toList();
 
-    // όταν είμαστε online, μπορούμε προαιρετικά να πάρουμε και από Firestore
+    // Only check Firestore if we're connected AND have no local favorites AND user is logged in
     if (_isConnected && ids.isEmpty && FirebaseAuth.instance.currentUser != null) {
       final remote = await _getDirectFirestoreFavorites();
       if (remote.isNotEmpty) {
@@ -103,8 +106,6 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     if (currentUser == null) return [];
 
     try {
-      // Debug: Check if the User collection exists and print all collection names
-      debugPrint('[FavoritesScreen] Checking collections in Firestore');
       final collections = await FirebaseFirestore.instance.collection('User').get();
       debugPrint('[FavoritesScreen] User collection exists with ${collections.docs.length} documents');
 
@@ -112,9 +113,6 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
           .collection('User')
           .doc(currentUser.uid)
           .get();
-
-      // Debug: Print raw document data
-      debugPrint('[FavoritesScreen] Raw user document data: ${userDoc.data()}');
 
       if (!userDoc.exists) {
         debugPrint('[FavoritesScreen] User document does not exist for ${currentUser.uid}');
@@ -204,79 +202,77 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         title: const Text('My Favorite Recipes'),
         backgroundColor: Colors.green,
       ),
-      body: user == null
-      // Αν δεν έχει user, φαίνεται empty view
-          ? _buildEmptyFavoritesView()
-          : FutureBuilder<bool>(
-        future: Connectivity().checkConnectivity()
-            .then((status) => status != ConnectivityResult.none),
 
-        builder: (ctx, connSnap) {
-          if (connSnap.connectionState == ConnectionState.waiting) {
+      // Αν δεν υπάρχει logged-in user, δείχνουμε το empty view
+      body: user == null
+          ? _buildEmptyFavoritesView()
+
+      // Διαφορετικά ελέγχουμε απευθείας το _isConnected
+          : _isConnected
+      // --- ONLINE branch ---
+          ? StreamBuilder<DocumentSnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('User')
+            .doc(user.uid)
+            .snapshots(),
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-          final isOnline = connSnap.data == true;
-          if (!isOnline) {
-            // --- OFFLINE:  μόνο  local DB ---
-              // Μέσα στο build() του FavoritesScreen, εκεί όπου σήμερα έχεις:
-            return FutureBuilder<List<RecipeEntity>>(
-              future: repo.localDb.recipeDao.findFavoriteRecipes(),
-              builder: (ctx, snap) {
-                if (snap.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                final favs = snap.data ?? [];
-                if (favs.isEmpty) return _buildEmptyFavoritesView();
-                final recipesData = favs.map((r) => RecipeData(
-                  documentId: r.documentId,
-                  name: r.name,
-                  imageUrl: r.assetPath,
-                  prepTime: r.prepTime,
-                  servings: r.servings,
-                  introduction: r.Introduction,
-                  category: r.category,
-                  difficulty: r.difficulty,
-                  ingredientsAmount: r.ingredientsAmount,
-                  ingredients: r.ingredients,
-                  instructions: r.instructions,
-                )).toList();
-                return _buildResponsiveGridView(context, recipesData);
-              },
-            );
-          } else {
-            // --- ONLINE:  Firestore stream   ---
-            return StreamBuilder<DocumentSnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('User')
-                  .doc(user.uid)
-                  .snapshots(),
-              builder: (context, snap) {
-                if (snap.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snap.hasError) {
-                  return Center(child: Text('Error: ${snap.error}'));
-                }
-                final data = snap.data?.data() as Map<String, dynamic>? ?? {};
-                final favorites = List<String>.from(data['favorites'] ?? []);
-                if (favorites.isEmpty) return _buildEmptyFavoritesView();
-
-                // χωρίζουμε σε chunks των 10 docIds
-                final chunks = <List<String>>[];
-                for (var i = 0; i < favorites.length; i += 10) {
-                  final end = i + 10 < favorites.length ? i + 10 : favorites.length;
-                  chunks.add(favorites.sublist(i, end));
-                }
-                return FavoritesGridView(chunks: chunks);
-              },
-            );
+          if (snap.hasError) {
+            return Center(child: Text('Error: ${snap.error}'));
           }
+
+          final data = snap.data?.data() as Map<String, dynamic>? ?? {};
+          final favorites = List<String>.from(data['favorites'] ?? []);
+          if (favorites.isEmpty) return _buildEmptyFavoritesView();
+
+          // Χωρίζουμε σε chunks των 10 IDs
+          final chunks = <List<String>>[];
+          for (var i = 0; i < favorites.length; i += 10) {
+            final end = (i + 10 < favorites.length) ? i + 10 : favorites.length;
+            chunks.add(favorites.sublist(i, end));
+          }
+
+          return FavoritesGridView(chunks: chunks, isOnline: true);
+        },
+      )
+
+      // --- OFFLINE branch ---
+          : FutureBuilder<List<RecipeEntity>>(
+        future: repo.localDb.recipeDao.findFavoriteRecipes(),
+        builder: (ctx, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final favs = snap.data ?? [];
+          if (favs.isEmpty) return _buildEmptyFavoritesView();
+
+          final recipesData = favs.map((r) {
+            final asset = r.assetPath.startsWith('assets/')
+                ? r.assetPath
+                : 'assets/${r.assetPath}';
+            return RecipeData(
+              documentId:       r.documentId,
+              name:             r.name,
+              imageUrl:         asset,
+              prepTime:         r.prepTime,
+              servings:         r.servings,
+              introduction:     r.Introduction,
+              category:         r.category,
+              difficulty:       r.difficulty,
+              ingredientsAmount:r.ingredientsAmount,
+              ingredients:      r.ingredients,
+              instructions:     r.instructions,
+            );
+          }).toList();
+
+          return _buildResponsiveGridView(context, recipesData);
         },
       ),
     );
   }
 }
-
 // A data class to standardize recipe information
 class RecipeData {
   final String documentId;
@@ -306,7 +302,6 @@ class RecipeData {
   });
 }
 
-// A reusable function to build the grid view - UPDATED for better landscape handling
 Widget _buildResponsiveGridView(BuildContext context, List<RecipeData> recipes) {
   final orientation = MediaQuery.of(context).orientation;
   final size = MediaQuery.of(context).size;
@@ -318,11 +313,11 @@ Widget _buildResponsiveGridView(BuildContext context, List<RecipeData> recipes) 
 
   if (orientation == Orientation.portrait) {
     crossAxisCount = size.width > 600 ? 3 : 2;
-    childAspectRatio = 0.7; // Matching AllRecipesScreen ratio for portrait
+    childAspectRatio = 0.7;
     horizontalPadding = 12.0;
   } else {
     crossAxisCount = size.width > 600 ? 3 : 2;
-    childAspectRatio = 1.2; // Matching AllRecipesScreen ratio for landscape
+    childAspectRatio = 1.2;
     horizontalPadding = 16.0;
   }
 
@@ -358,11 +353,17 @@ Widget _buildResponsiveGridView(BuildContext context, List<RecipeData> recipes) 
 
 class FavoritesGridView extends StatelessWidget {
   final List<List<String>> chunks;
-  const FavoritesGridView({Key? key, required this.chunks}) : super(key: key);
+  final bool isOnline;
+
+  const FavoritesGridView({
+    Key? key,
+    required this.chunks,
+    required this.isOnline,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    debugPrint('[FavoritesGridView] Building grid with ${chunks.length} chunks: $chunks');
+    debugPrint('[FavoritesGridView] Network status: ${isOnline ? "Online" : "Offline"}');
 
     return FutureBuilder<List<QuerySnapshot>>(
       future: Future.wait(
@@ -394,16 +395,35 @@ class FavoritesGridView extends StatelessWidget {
 
         final recipes = allDocs.map((doc) {
           final data = doc.data() as Map<String, dynamic>;
+
+          // Always prioritize assetPath for local images when not online
+          final remoteImage = data['image'] as String?;
+          final localAsset = data['assetPath'] as String?;
+
+
+          // When offline, we need to use assetPath which points to local assets
+          String imageUrl = '';
+          if (!isOnline && localAsset != null && localAsset.isNotEmpty) {
+            // Offline mode: use local asset path
+            imageUrl = localAsset;
+          } else if (remoteImage != null && remoteImage.isNotEmpty) {
+            // Online mode with remote image
+            imageUrl = remoteImage;
+          } else if (localAsset != null && localAsset.isNotEmpty) {
+            // Fallback to local asset even when online
+            imageUrl = localAsset;
+          }
+
           return RecipeData(
             documentId: doc.id,
-            name: data['name'] ?? 'No Name',
-            imageUrl: data['image'] ?? '',
-            prepTime: data['prepTime'] ?? '',
-            servings: data['servings'] ?? '',
-            introduction: data['Introduction'] ?? '',
-            category: data['category'] ?? '',
-            difficulty: data['difficulty'] ?? '',
-            ingredientsAmount: data['ingredientsAmount'] ?? '',
+            name: (data['name'] as String?) ?? 'No Name',
+            imageUrl: imageUrl,
+            prepTime: (data['prepTime'] as String?) ?? '',
+            servings: (data['servings'] as String?) ?? '',
+            introduction: (data['Introduction'] as String?) ?? '',
+            category: (data['category'] as String?) ?? '',
+            difficulty: (data['difficulty'] as String?) ?? '',
+            ingredientsAmount: (data['ingredientsAmount'] as String?) ?? '',
             ingredients: List<String>.from(data['ingredients'] ?? []),
             instructions: List<String>.from(data['instructions'] ?? []),
           );
