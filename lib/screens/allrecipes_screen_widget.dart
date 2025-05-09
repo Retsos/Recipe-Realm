@@ -8,6 +8,7 @@ import 'dart:io';
   import 'package:reciperealm/widgets/guest_provider_widget.dart';
   import '../database/app_repo.dart';
   import '../main.dart';
+import '../widgets/auth_service.dart';
 
   class AllRecipesScreen extends StatefulWidget {
     final String? initialCategory;
@@ -50,19 +51,19 @@ import 'dart:io';
         _firebaseService = FirebaseService(repo);
 
         _checkConnectionAndLoadRecipes();
-        _connSub = Connectivity()
-            .onConnectivityChanged
-            .listen((result) async {
-          final connected = result != ConnectivityResult.none;
+
+        _connSub = Connectivity().onConnectivityChanged.listen((_) async {
           if (!mounted) return;
-          if (connected != _isConnected) {
-            setState(() => _isConnected = connected);
+
+          final realNet = await hasRealInternet();
+          if (realNet != _isConnected) {
+            setState(() => _isConnected = realNet);
             await _checkConnectionAndLoadRecipes(showSnackbar: true);
           }
-        }) ;
-
+        });
       }
     }
+
 
     @override
     void dispose() {
@@ -105,64 +106,13 @@ import 'dart:io';
 
       try {
         if (!realNet) {
-          debugPrint('[DEBUG] Loading local recipes');
           _recipes = await _firebaseService.getLocalDefaultRecipes();
         } else {
-          debugPrint('[DEBUG] Loading with filters: category=${_selectedCategory ?? 'all'}, servings=${_selectedServingsRange?.toString() ?? 'all'}, myRecipes=${_showOnlyMyRecipes}');
-
-          // Case 1: Only my recipes filter
-          if (_showOnlyMyRecipes && _firebaseService.currentUserId != null) {
-            _recipes = await _firebaseService.getRecipesByUser(_firebaseService.currentUserId!);
-          }
-          // Case 2: Category filter
-          else if (_selectedCategory != null && _selectedServingsRange == null) {
-            _recipes = await _firebaseService.getRecipesByCategory(_selectedCategory!);
-          }
-          // Case 3: Servings filter
-          else if (_selectedServingsRange != null && _selectedCategory == null) {
-            _recipes = await _firebaseService.getRecipesByServingsRange(_selectedServingsRange!);
-          }
-          // Case 4: Category AND Servings filter
-          else if (_selectedCategory != null && _selectedServingsRange != null) {
-            debugPrint('[DEBUG] Filtering by both category (${_selectedCategory}) and servings (${_selectedServingsRange})');
-
-            // First get by category (usually more restrictive)
-            List<Map<String, dynamic>> categoryResults = await _firebaseService.getRecipesByCategory(_selectedCategory!);
-
-            debugPrint('[DEBUG] Found ${categoryResults.length} recipes in category before servings filter');
-
-            // Then filter by exact servings match in memory
-            _recipes = categoryResults.where((recipe) {
-              final servingsStr = recipe['servings'].toString().trim();
-              debugPrint('[DEBUG] Recipe "${recipe['name']}" has servings: "$servingsStr"');
-
-              // Handle special case for "4+"
-              if (_selectedServingsRange == "4+") {
-                // Check if the servings starts with 4, 5, 6, etc.
-                if (servingsStr.startsWith("4") || servingsStr.startsWith("5") ||
-                    servingsStr.startsWith("6") || servingsStr.startsWith("7") ||
-                    servingsStr.startsWith("8") || servingsStr.startsWith("9")) {
-                  return true;
-                }
-                if (servingsStr.contains("-")) {
-                  final firstPart = servingsStr.split("-")[0].trim();
-                  final firstNum = int.tryParse(firstPart) ?? 0;
-                  return firstNum >= 4;
-                }
-                return false;
-              }
-
-              // For normal ranges, do an exact string match
-              return servingsStr == _selectedServingsRange;
-            }).toList();
-
-            debugPrint('[DEBUG] Found ${_recipes!.length} recipes after servings filter');
-          }          // Case 5: No specific filters
-          else {
-            _recipes = await _firebaseService.getAllRecipes();
-          }
-
-          debugPrint('[DEBUG] Final recipes loaded: ${_recipes!.length}');
+          _recipes = await _firebaseService.getRecipes(
+            category: _selectedCategory,
+            servingsRange: _selectedServingsRange,
+            onlyMy: _showOnlyMyRecipes,
+          );
         }
       } catch (e) {
         debugPrint('Error loading recipes: $e');
@@ -175,23 +125,26 @@ import 'dart:io';
     List<Map<String, dynamic>> _getFilteredRecipes() {
       if (_recipes == null) return [];
 
-      return _recipes!.where((recipe) {
-        // Prep time (μόνο τοπικά)
-        if (_selectedPrepTime != null && !_matchesPrepTimeFilter(recipe['prepTime'])) {
-          return false;
+      final isGuest = Provider.of<GuestProvider>(context, listen: false).isGuest;
+
+      return _recipes!.where((r) {
+        final meta = r['metadata'] as Map<String, dynamic>;
+        final createdBy = (meta['createdBy'] as String).trim();
+
+        // —————— 1) Guest βλέπει μόνο default + public ——————
+        if (isGuest) {
+          if (createdBy.isNotEmpty) return false;   // αποκλείει user‐recipes
         }
 
-        // Guest check (μόνο τοπικά)
-        final metadata = recipe['metadata'] as Map<String, dynamic>;
-        final createdBy = metadata['createdBy']?.toString().trim();
-        final isGuest = Provider.of<GuestProvider>(context, listen: false).isGuest;
-        if (isGuest && createdBy != "") {
+        // —————— 2) Φίλτρο prep-time ——————
+        if (_selectedPrepTime != null && !_matchesPrepTimeFilter(r['prepTime'])) {
           return false;
         }
 
         return true;
       }).toList();
     }
+
 
     bool _matchesPrepTimeFilter(String prepTime) {
       if (_selectedPrepTime == null) return true;
@@ -212,7 +165,9 @@ import 'dart:io';
       }
     }
 
-    void _showFilterDialog() {
+    Future<void> _showFilterDialog() async {
+      print(AuthService.isLoggedIn());
+      print(AuthService.getCurrentUser());
       if (!_isConnected) {
         debugPrint('Filter dialog blocked: offline');
         ScaffoldMessenger.of(context).showSnackBar(
@@ -229,6 +184,8 @@ import 'dart:io';
       String? tempSelectedPrepTime = _selectedPrepTime;
       bool tempShowOnlyMyRecipes = _showOnlyMyRecipes;
       String? tempSelectedServingsRange = _selectedServingsRange;
+      final isLoggedIn = AuthService.isLoggedIn();
+      final hasNet = await AuthService.hasRealInternet();
 
       final isDarkMode = Provider.of<ThemeProvider>(context, listen: false).isDarkMode;
       showModalBottomSheet(
@@ -352,20 +309,31 @@ import 'dart:io';
                                 child: Text(
                                   'Only show recipes created by me',
                                   style: TextStyle(
-                                    // αν είσαι offline, γκρι‐απενεργοποιημένο
                                     color: !_isConnected
                                         ? Colors.grey[400]
-                                    // αλλιώς λευκό σε dark mode, ή σκούρο σχεδόν μαύρο σε light mode
-                                        : (isDarkMode ? Colors.white : Colors.black87),
+                                        : isDarkMode
+                                        ? Colors.white
+                                        : Colors.black87,
                                     fontSize: 16,
                                   ),
                                 ),
                               ),
                               Switch(
                                 value: tempShowOnlyMyRecipes,
-                                onChanged: _isConnected
+                                // αν δεν είναι logged in ή δεν έχει internet, onChanged δείχνει error, αλλιώς αλλάζει τιμή
+                                onChanged: (isLoggedIn && hasNet)
                                     ? (value) => setModalState(() => tempShowOnlyMyRecipes = value)
-                                    : null,
+                                    : (_) {
+                                  final msg = !isLoggedIn
+                                      ? 'You must be logged in to filter your recipes.'
+                                      : 'No internet connection.';
+                                  ScaffoldMessenger.of(ctx).showSnackBar(
+                                    SnackBar(
+                                      content: Text(msg),
+                                      backgroundColor: Colors.redAccent,
+                                    ),
+                                  );
+                                },
                                 activeColor: Colors.green[700],
                               ),
                             ],

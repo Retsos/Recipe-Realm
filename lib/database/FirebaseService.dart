@@ -363,4 +363,74 @@ class FirebaseService {
         'isDefaultRecipe': data['createdBy'] == null || data['createdBy'] == '',
       },
     };
-  }}
+  }
+
+  /// Φέρνει τις συνταγές εφαρμόζοντας category, servingsRange και onlyMy στο Firestore
+  Future<List<Map<String, dynamic>>> getRecipes({
+    String? category,
+    String? servingsRange,
+    bool onlyMy = false,
+  }) async {
+    try {
+
+      Query<Map<String, dynamic>> query =
+      _firestore.collection('Recipe').withConverter<Map<String, dynamic>>(
+        fromFirestore: (snap, _) => snap.data()!,
+        toFirestore: (map, _) => map,
+      );
+
+      final isGuest = !isUserAuthenticated;
+
+      // 2) Αν  guest, mono default
+      if (isGuest) {
+        query = query
+            .where('createdBy', isEqualTo: '');
+      }
+
+      // 2) Φίλτρο "μόνο δικές μου"
+      if (onlyMy && currentUserId != null) {
+        query = query.where('createdBy', isEqualTo: currentUserId);
+      }
+
+      // 3) Φίλτρο κατηγορίας
+      if (category != null) {
+        query = query.where('category', isEqualTo: category);
+      }
+
+
+      final snap = await query.get();
+      var recs = snap.docs.map(docToMap).toList();
+
+      if (servingsRange != null) {
+        recs = recs.where((r) {
+          final s = r['servings'].toString().trim();
+          return _matchesServingsFilter(s, servingsRange);
+        }).toList();
+      }
+
+      return recs;
+    } catch (e) {
+      debugPrint('Error getRecipes with filters: $e');
+      return [];
+    }
+  }
+
+  // Βοηθητική για range τύπου "2-4" ή "4+"
+  bool _matchesServingsFilter(String s, String filter) {
+    if (filter.endsWith('+')) {
+      final min = int.tryParse(filter.replaceAll('+','')) ?? 0;
+      final val = int.tryParse(s.split('-').first) ?? 0;
+      return val >= min;
+    }
+    if (filter.contains('-')) {
+      final parts = filter.split('-').map((t)=>int.tryParse(t)??0).toList();
+      final min = parts[0], max = parts[1];
+      final recParts = s.contains('-')
+          ? s.split('-').map((t)=>int.tryParse(t)??0).toList()
+          : [int.tryParse(s)??0];
+      final rmin = recParts[0], rmax = recParts.length>1 ? recParts[1] : rmin;
+      return rmin>=min && rmax<=max;
+    }
+    return s == filter;
+  }
+}
