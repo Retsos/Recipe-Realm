@@ -6,7 +6,7 @@ admin.initializeApp();
 
 exports.scheduledMealNotifications = onSchedule(
     {
-        schedule: "*/5 * * * *",
+        schedule: "* * * * *", //*/5 fixxed times /9 /2 /7
         timeZone: "Europe/Athens",
         memory: "256MiB",
         timeoutSeconds: 60,

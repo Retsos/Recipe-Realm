@@ -303,6 +303,7 @@ class _WeekScreenState extends State<WeekScreen> {
     final plans = (data['weeklyPlans'] as Map<String, dynamic>?) ?? {};
     plans.forEach((dateKey, value) {
       final planMap = value as Map<String, dynamic>;
+      if (!mounted) return;
       setState(() {
         _dailyPlans[dateKey] = {
           'BreakFast': planMap['BreakFast'] as String? ?? '',
@@ -346,34 +347,34 @@ class _WeekScreenState extends State<WeekScreen> {
       _onDayPlanCompleted(date);
 
       // Σταθερές ώρες ειδοποιήσεων (UTC)
-      final mealTimes = [
-        {'mealType': 'BreakFast', 'hour': 6, 'minute': 0},   // 09:00 Athens
-        {'mealType': 'lunch',     'hour': 11, 'minute': 0},  // 14:00 Athens
-        {'mealType': 'dinner',    'hour': 16, 'minute': 0},  // 19:00 Athens
-      ];
+      // final mealTimes = [
+      //   {'mealType': 'BreakFast', 'hour': 6, 'minute': 0},   // 09:00 Athens
+      //   {'mealType': 'lunch',     'hour': 11, 'minute': 0},  // 14:00 Athens
+      //   {'mealType': 'dinner',    'hour': 16, 'minute': 0},  // 19:00 Athens
+      // ];
 
       ///TESTERS TO CHECK FOR NOTIFICATIONS IN THE NEXT MINUTE
       // Τώρα + 1 λεπτό
-      // final nowUtc = DateTime.now().toUtc().add(Duration(minutes: 1));
-      //
-      // final hour = nowUtc.hour;
-      // final minute = nowUtc.minute;
-      //
-      // final mealTimes = [
-      //   {'mealType': 'BreakFast', 'hour': hour, 'minute': minute},
-      //   {'mealType': 'lunch', 'hour': hour, 'minute': minute},
-      //   {'mealType': 'dinner', 'hour': hour, 'minute': minute},
-      // ];
+      final nowUtc = DateTime.now().toUtc().add(Duration(minutes: 1));
 
-      // final mealContents = {
-      //   'BreakFast': plan['BreakFast'],
-      //   'lunch': plan['lunch'],
-      //   'dinner': plan['dinner'],
-      // };
+      final hour = nowUtc.hour;
+      final minute = nowUtc.minute;
+
+      final mealTimes = [
+        {'mealType': 'BreakFast', 'hour': hour, 'minute': minute},
+        {'mealType': 'lunch', 'hour': hour, 'minute': minute},
+        {'mealType': 'dinner', 'hour': hour, 'minute': minute},
+      ];
+
+      final mealContents = {
+        'BreakFast': plan['BreakFast'],
+        'lunch': plan['lunch'],
+        'dinner': plan['dinner'],
+      };
 
       await docRef.update({
         'mealNotificationTimes': mealTimes,
-        // 'weeklyPlans.$dateKey': mealContents,
+        'weeklyPlans.$dateKey': mealContents,
       });
     }
 
