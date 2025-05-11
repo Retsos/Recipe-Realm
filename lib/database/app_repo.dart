@@ -166,8 +166,17 @@
           notifyFavoritesChanged();
         }
       } else {
+        ///ΑΠΟΦΥΓΗ ΣΠΑΜ
+
+        // Αν έχει περάσει λιγότερο από 2.5 δευτερόλ  επτα, δεν δειχνω νέο Snackbar
+        if (_lastSnackbarTime != null &&
+            now.difference(_lastSnackbarTime!).inMilliseconds < 2500) {
+          return;
+        }
+
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+
+        const SnackBar(
             content: Text('Offline: Favorites will sync when back online!'),
             backgroundColor: Colors.orange,
           ),
