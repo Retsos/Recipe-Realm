@@ -152,15 +152,6 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
         'myrecipes': FieldValue.arrayUnion([recipeId]),
       });
 
-      await FirebaseFirestore.instance
-          .collection('User')
-          .doc(user.uid)
-          .collection('myrecipes')
-          .doc(recipeId)
-          .set({
-        'addedAt': Timestamp.now(),
-      });
-
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Recipe added successfully!'), backgroundColor: Colors.green),
       );

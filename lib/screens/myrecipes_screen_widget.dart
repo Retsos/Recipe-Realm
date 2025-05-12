@@ -213,10 +213,7 @@ class _MyRecipesScreenState extends State<MyRecipesScreen> {
 
         if (snap.hasError || snap.data == false) {
           return Scaffold(
-            appBar: AppBar(
-              title: const Text('My Recipes'),
-              backgroundColor: Colors.green,
-            ),
+            appBar: AppBar(title: const Text('My Recipes'), backgroundColor: Colors.green),
             body: _buildNoInternetWidget(),
           );
         }
@@ -237,11 +234,7 @@ class _MyRecipesScreenState extends State<MyRecipesScreen> {
             title: const Text('My Recipes'),
             backgroundColor: Colors.green,
           ),
-          body: _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : !_hasInternet
-              ? _buildNoInternetWidget()
-              : StreamBuilder<QuerySnapshot>(
+          body: StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance
                 .collection('Recipe')
                 .where('createdBy', isEqualTo: user.uid)

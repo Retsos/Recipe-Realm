@@ -126,17 +126,30 @@ import '../widgets/auth_service.dart';
       if (_recipes == null) return [];
 
       final isGuest = Provider.of<GuestProvider>(context, listen: false).isGuest;
+      final currentUid = _firebaseService.currentUserId;
 
       return _recipes!.where((r) {
         final meta = r['metadata'] as Map<String, dynamic>;
         final createdBy = (meta['createdBy'] as String).trim();
+        final access    = (meta['access']    as String).trim();
 
-        // —————— 1) Guest βλέπει μόνο default + public ——————
+        // —————— 1) Guest βλέπει μόνο default ——————
         if (isGuest) {
           if (createdBy.isNotEmpty) return false;   // αποκλείει user‐recipes
         }
+        // —————— 2) Απλος User βλέπει default + public + δικες του ——————
 
-        // —————— 2) Φίλτρο prep-time ——————
+        else {
+          final isDefault  = createdBy.isEmpty;
+          final isOwn      = createdBy == currentUid;
+          final isPublic   = access == 'public';
+
+          if (!(isDefault || isOwn || isPublic)) {
+            return false;
+          }
+        }
+
+        // —————— 3) Φιλτρο prep-time ——————
         if (_selectedPrepTime != null && !_matchesPrepTimeFilter(r['prepTime'])) {
           return false;
         }
