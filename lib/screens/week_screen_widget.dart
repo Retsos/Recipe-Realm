@@ -274,23 +274,32 @@ class _WeekScreenState extends State<WeekScreen> {
     });
   }
 
-  Future<List<Recipe>> _fetchRecipes() async {
+  Future<void> _loadRecipes() async {
     final snapshot = await FirebaseFirestore.instance.collection('Recipe').get();
-    return snapshot.docs.map((doc) {
+    final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+
+    final filteredRecipes = snapshot.docs.where((doc) {
+      final data      = doc.data();
+      final createdBy = (data['createdBy'] as String?)?.trim() ?? '';
+      final access    = (data['access']    as String?)?.trim() ?? 'public';
+
+      // Logged-in users βλέπουν defaults, δικές τους, και public άλλων
+      final isDefault = createdBy.isEmpty;
+      final isOwn     = createdBy == currentUid;
+      final isPublic  = access    == 'public';
+      return isDefault || isOwn || isPublic;
+    }).map((doc) {
       final data = doc.data();
       return Recipe(
-        name: data['name'] as String? ?? 'No Name',
-        image: data['image'] as String? ?? '',
+        name:     data['name']     as String? ?? 'No Name',
+        image:    data['image']    as String? ?? '',
         category: data['category'] as String? ?? 'Uncategorized',
       );
     }).toList();
-  }
 
-  Future<void> _loadRecipes() async {
-    final recipes = await _fetchRecipes();
-    if (!mounted) return; // ✅ προστασία
+    if (!mounted) return;
     setState(() {
-      _recipeOptions = recipes;
+      _recipeOptions = filteredRecipes;
     });
   }
 
