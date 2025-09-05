@@ -26,3 +26,6 @@
 
 This project was developed as part of the **Advanced Topics of Human Computer Interaction (Mobile Programming)** course, Department of Information and Electronic Engineering, 
 aiming to demonstrate the use of modern cross-platform development tools and cloud integration in building a fully functional and user-friendly recipe and meal planning system.
+
+
+<img width="405" height="842" alt="image" src="https://github.com/user-attachments/assets/202386e2-4fd6-4c11-85c2-300a14a86845" />
